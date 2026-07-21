@@ -16,6 +16,8 @@
 
 ## 2. Recording
 
+- หน้าเริ่มต้นใน timeline ต้องมี 3 ปุ่มชัดเจน: `อัดหน้าจอ`, `เพิ่มสื่อ`, `พากย์เสียง`
+- ก่อนมีวิดีโอ ปุ่ม `พากย์เสียง` ใน quick actions ต้อง disabled
 - กด `อัดหน้าจอ`
 - เลือกทั้งจอหรือหน้าต่างสั้น ๆ
 - อัดประมาณ 10 วินาที และคลิกอย่างน้อย 3 จุดที่ห่างกัน
@@ -43,6 +45,12 @@
 ## 5. Timeline Trim
 
 - กด `+ Video lane`, `+ Voice lane`, `+ Camera lane` แล้วต้องเห็น lane ใหม่แยกตามชนิด media
+- เปิด/ลากวิดีโอไฟล์แรกเพื่อเป็น base แล้วเพิ่มวิดีโอไฟล์ที่สอง ต้องเห็นเป็น overlay clip สีเหลืองใน video lane
+- เล่น preview ช่วง overlay clip แล้ววิดีโอที่สองต้องวาดทับบนพื้นที่ content
+- ลาก overlay video clip ซ้าย/ขวาและข้าม video lane ได้
+- ลากขอบซ้าย/ขวาของ overlay video clip เพื่อ trim ได้
+- กด split กลาง overlay video clip แล้วต้องแตกเป็น 2 clip
+- Export MP4 แล้ว overlay video ต้องติดไฟล์ตาม preview
 - ลากขอบซ้าย/ขวาของ video segment เพื่อ trim หัว/ท้าย
 - กด `แบ่งท่อน` กลาง segment แล้ว trim แต่ละท่อนแยกกัน
 - เลือก segment แล้วเปลี่ยน `Lane` ใน panel ด้านล่าง ต้องย้าย segment ไป lane ที่เลือก

@@ -216,6 +216,23 @@
     overflow: auto;
   }
   .transport { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .quick-start {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .quick-action {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 8px;
+    align-items: center;
+    text-align: left;
+    padding: 9px 10px;
+  }
+  .quick-action .ico { font-size: 18px; text-align: center; }
+  .quick-action strong { display: block; font-size: 12px; line-height: 1.2; }
+  .quick-action span:last-child { display: block; color: var(--muted); font-size: 10px; line-height: 1.35; margin-top: 2px; }
   .time-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .timeline-viewport {
     overflow-x: auto;
@@ -308,6 +325,10 @@
   .seg-block.selected { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
   .seg-block .spd { opacity: .85; font-weight: 600; }
   .seg-block.fast { background: linear-gradient(180deg, #4a3560, #3a2a4e); }
+  .seg-block.overlay {
+    background: linear-gradient(90deg, rgba(250,204,21,.5), rgba(251,146,60,.38));
+    border-color: rgba(250,204,21,.9);
+  }
   .ruler {
     position: relative;
     height: 18px;
@@ -810,16 +831,21 @@
       <canvas id="canvas" width="1080" height="1920" style="display:none"></canvas>
       <div class="drop-hint" id="dropHint">
         <div class="big">📱</div>
-        <div><strong>ลากไฟล์วิดีโออัดหน้าจอ iPhone มาวางที่นี่</strong><br>
-        หรือกดปุ่ม "เปิดวิดีโอ" ด้านบน<br>
-        <span style="font-size:12px">อัดเองจาก iPhone: Control Center → ปุ่มอัดหน้าจอ → AirDrop มาที่ Mac<br>
-        หรืออัดผ่าน Mac ด้วย <b>python3 record.py</b> แล้วลากไฟล์ .mp4 + .clicks.json มาพร้อมกัน → ซูมอัตโนมัติทุกจุดที่คลิก</span></div>
+        <div><strong>ลากวิดีโอแรกมาวางเพื่อเริ่มโปรเจกต์</strong><br>
+        หรือกด "เพิ่มสื่อ" / "อัดหน้าจอ"<br>
+        <span style="font-size:12px">หลังจากมีวิดีโอหลักแล้ว ลากวิดีโอเพิ่มเพื่อวางเป็น overlay clip บน timeline<br>
+        ถ้ามี .clicks.json ให้ลากมาพร้อมวิดีโอหลักเพื่อสร้าง zoom อัตโนมัติ</span></div>
       </div>
     </div>
 
     <div class="splitter-horizontal" id="timelineSplitter" title="Drag to resize timeline"></div>
 
     <div class="timeline-area">
+      <div class="quick-start">
+        <button class="btn quick-action" id="quickRecord"><span class="ico">🔴</span><span><strong id="quickRecordTitle">อัดหน้าจอ</strong><span id="quickRecordSub">เลือก iPhone, หน้าต่าง หรือทั้งจอ</span></span></button>
+        <button class="btn quick-action" id="quickAddMedia"><span class="ico">➕</span><span><strong id="quickAddTitle">เพิ่มสื่อ</strong><span id="quickAddSub">วิดีโอแรกเป็น base, ไฟล์ถัดไปซ้อนเป็น clip</span></span></button>
+        <button class="btn quick-action" id="quickVoice" disabled><span class="ico">🎙</span><span><strong id="quickVoiceTitle">พากย์เสียง</strong><span id="quickVoiceSub">เลือกไมค์ แล้วอัดจากตำแหน่ง playhead</span></span></button>
+      </div>
       <div class="transport">
         <button class="btn small" id="playBtn" disabled>▶️ เล่น</button>
         <button class="btn small" id="splitBtn" disabled title="แบ่งท่อนตรงตำแหน่งหัวอ่าน">✂️ แบ่งท่อน</button>
@@ -952,7 +978,7 @@
   </div>
 </div>
 
-<input type="file" id="fileInput" accept="video/*,image/*">
+<input type="file" id="fileInput" accept="video/*,image/*" multiple>
 <input type="file" id="bgImageInput" accept="image/*">
 <video id="video" style="display:none" playsinline></video>
 
@@ -991,6 +1017,8 @@ const state = {
   exportScale: 2,
   segments: [],    // {id, start, end, speed, lane} — ท่อนที่เก็บไว้ (ช่องว่างระหว่างท่อน = ถูกตัดออก)
   selectedSeg: null,
+  videoClips: [],  // {id, outStart, outDuration, mediaOffset, lane, url, video, name}
+  selectedVideoId: null,
   events: [],      // {id, start, x, y, zoom, tIn, hold, tOut}
   selectedId: null,
   voiceovers: [],  // {id, start, duration, blob, url, name, lane}
@@ -1010,8 +1038,10 @@ const state = {
   exporting: false,
 };
 let nextId = 1;
+let videoClipId = 1;
 let voiceId = 1;
 let faceId = 1;
+let pendingOverlayFiles = [];
 const history = { undo: [], redo: [] };
 function eventDuration(ev) { return ev.tIn + ev.hold + ev.tOut; }
 function eventEnd(ev) { return ev.start + eventDuration(ev); }
@@ -1054,6 +1084,7 @@ const I18N = {
     play: '▶️ เล่น', pause: '⏸ หยุด', split: '✂️ แบ่งท่อน',
     voice: '🎙 Voice over', stopVoice: '⏹ หยุดเสียง', recordingVoice: '🔴 กำลังอัดเสียง',
     output: 'ผลลัพธ์', zoomPoints: n => `🔍 ${n} จุดซูม`, voiceClip: n => `เสียง ${n}`,
+    videoClip: n => `วิดีโอ ${n}`,
     recStarting: '⏳ กำลังเริ่ม...', recStopping: '⏳ กำลังปิดไฟล์...', recProcessing: '⏳ กำลังแปลงไฟล์…',
     shortcuts: 'คีย์ลัด',
     close: 'ปิด',
@@ -1068,7 +1099,7 @@ const I18N = {
     cropReset: '↺ ล้าง crop', cropGuide: '👁 ดูขอบ', zoomDefaults: 'ค่าเริ่มต้นการซูม',
     zoomLevel: 'ระดับซูม', hold: 'ค้างไว้', exportResolution: 'ความละเอียด Export (PNG)',
     helpTip: '💡 <b>วิธีใช้:</b> เล่นวิดีโอถึงจังหวะที่กดปุ่มในแอป แล้ว<b>คลิกบนวิดีโอ</b>ตรงจุดนั้น — โปรแกรมจะซูมเข้า-ออกให้อัตโนมัติแบบนุ่มๆ<br><br>ลาก marker บน timeline เพื่อย้ายเวลา, คลิก marker เพื่อแก้ระดับซูม/ลบ',
-    dropHint: '<div class="big">📱</div><div><strong>ลากไฟล์วิดีโออัดหน้าจอ iPhone มาวางที่นี่</strong><br>หรือกดปุ่ม "เปิดวิดีโอ" ด้านบน<br><span style="font-size:12px">อัดเองจาก iPhone: Control Center → ปุ่มอัดหน้าจอ → AirDrop มาที่ Mac<br>หรืออัดผ่าน Mac ด้วย <b>python3 record.py</b> แล้วลากไฟล์ .mp4 + .clicks.json มาพร้อมกัน → ซูมอัตโนมัติทุกจุดที่คลิก</span></div>',
+    dropHint: '<div class="big">📱</div><div><strong>ลากวิดีโอแรกมาวางเพื่อเริ่มโปรเจกต์</strong><br>หรือกด "เพิ่มสื่อ" / "อัดหน้าจอ"<br><span style="font-size:12px">หลังจากมีวิดีโอหลักแล้ว ลากวิดีโอเพิ่มเพื่อวางเป็น overlay clip บน timeline<br>ถ้ามี .clicks.json ให้ลากมาพร้อมวิดีโอหลักเพื่อสร้าง zoom อัตโนมัติ</span></div>',
     voiceDelete: '🗑 ลบเสียงนี้', selectedSegment: '🎞 ท่อนที่เลือก', speed: 'ความเร็ว',
     segDelete: '🗑 ตัดท่อนนี้ออก', zoomMarker: '🔍 Zoom marker', zoomIn: 'เข้า', zoomOut: 'ออก',
     growLeft: '← ขยาย', growRight: 'ขยาย →', delete: '🗑 ลบ',
@@ -1082,7 +1113,13 @@ const I18N = {
     videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
     addVideoLane: '+ เลนวิดีโอ', addVoiceLane: '+ เลนเสียง', addCameraLane: '+ เลนกล้อง',
     lane: 'เลน', closePanel: 'ปิดเมนูแก้ไข',
+    quickRecordTitle: 'อัดหน้าจอ', quickRecordSub: 'เลือก iPhone, หน้าต่าง หรือทั้งจอ',
+    quickAddTitle: 'เพิ่มสื่อ', quickAddSub: 'วิดีโอแรกเป็น base, ไฟล์ถัดไปซ้อนเป็น clip',
+    quickVoiceTitle: 'พากย์เสียง', quickVoiceSub: 'เลือกไมค์ แล้วอัดจากตำแหน่ง playhead',
+    addOverlayVideo: 'เพิ่มวิดีโอซ้อน',
+    selectedOverlayVideo: 'วิดีโอซ้อน',
     confirmDeleteSegment: 'ลบท่อนวิดีโอนี้ออกใช่ไหม?',
+    confirmDeleteVideoClip: 'ลบวิดีโอซ้อนนี้ใช่ไหม?',
     confirmDeleteVoice: 'ลบเสียง voice over นี้ใช่ไหม?',
     confirmDeleteCamera: 'ลบคลิปกล้องนี้ใช่ไหม?',
     micPermission: 'เปิดไมโครโฟนไม่ได้ — ตรวจสิทธิ์ Microphone ให้ ZoomCut',
@@ -1100,6 +1137,7 @@ const I18N = {
     play: '▶️ Play', pause: '⏸ Pause', split: '✂️ Split',
     voice: '🎙 Voice over', stopVoice: '⏹ Stop voice', recordingVoice: '🔴 Recording voice',
     output: 'output', zoomPoints: n => `🔍 ${n} zooms`, voiceClip: n => `Voice ${n}`,
+    videoClip: n => `Video ${n}`,
     recStarting: '⏳ Starting...', recStopping: '⏳ Closing file...', recProcessing: '⏳ Processing…',
     shortcuts: 'Keyboard shortcuts',
     close: 'Close',
@@ -1114,7 +1152,7 @@ const I18N = {
     cropReset: '↺ Reset crop', cropGuide: '👁 Crop guide', zoomDefaults: 'Default zoom',
     zoomLevel: 'Zoom level', hold: 'Hold', exportResolution: 'Export resolution (PNG)',
     helpTip: '💡 <b>How to use:</b> Play to the moment you tap in the app, then <b>click the video</b> at that point. ZoomCut will animate the zoom in and out smoothly.<br><br>Drag markers on the timeline to move them, or click a marker to edit zoom/delete it.',
-    dropHint: '<div class="big">📱</div><div><strong>Drop an iPhone screen recording here</strong><br>or click "Open video/image" above<br><span style="font-size:12px">Record on iPhone from Control Center, then AirDrop it to your Mac<br>or record on Mac with <b>python3 record.py</b> and drop the .mp4 + .clicks.json together for automatic click zooms</span></div>',
+    dropHint: '<div class="big">📱</div><div><strong>Drop the first video to start a project</strong><br>or use "Add media" / "Record screen"<br><span style="font-size:12px">After the base video is loaded, drop more videos to add overlay clips on the timeline<br>Drop .clicks.json with the base video to create automatic zooms</span></div>',
     voiceDelete: '🗑 Delete voice', selectedSegment: '🎞 Selected segment', speed: 'Speed',
     segDelete: '🗑 Delete segment', zoomMarker: '🔍 Zoom marker', zoomIn: 'In', zoomOut: 'Out',
     growLeft: '← Extend', growRight: 'Extend →', delete: '🗑 Delete',
@@ -1128,7 +1166,13 @@ const I18N = {
     videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
     addVideoLane: '+ Video lane', addVoiceLane: '+ Voice lane', addCameraLane: '+ Camera lane',
     lane: 'Lane', closePanel: 'Close edit panel',
+    quickRecordTitle: 'Record screen', quickRecordSub: 'Choose iPhone, a window, or a display',
+    quickAddTitle: 'Add media', quickAddSub: 'First video becomes base; more videos become clips',
+    quickVoiceTitle: 'Voice over', quickVoiceSub: 'Pick a mic, then record from the playhead',
+    addOverlayVideo: 'Add overlay video',
+    selectedOverlayVideo: 'Overlay video',
     confirmDeleteSegment: 'Delete this video segment?',
+    confirmDeleteVideoClip: 'Delete this overlay video?',
     confirmDeleteVoice: 'Delete this voiceover clip?',
     confirmDeleteCamera: 'Delete this camera clip?',
     micPermission: 'Cannot open microphone. Check ZoomCut Microphone permission.',
@@ -1148,6 +1192,8 @@ function stateSnapshot() {
   return {
     segments: state.segments.map(s => ({ ...s })),
     selectedSeg: state.selectedSeg,
+    videoClips: state.videoClips.map(v => ({ ...v })),
+    selectedVideoId: state.selectedVideoId,
     events: state.events.map(e => ({ ...e })),
     selectedId: state.selectedId,
     voiceovers: state.voiceovers.map(v => ({ ...v })),
@@ -1163,6 +1209,8 @@ function stateSnapshot() {
 function restoreSnapshot(s) {
   state.segments = s.segments.map(x => ({ ...x }));
   state.selectedSeg = s.selectedSeg;
+  state.videoClips = (s.videoClips || []).map(x => ({ ...x }));
+  state.selectedVideoId = s.selectedVideoId || null;
   state.events = s.events.map(x => ({ ...x }));
   state.selectedId = s.selectedId;
   state.voiceovers = s.voiceovers.map(x => ({ ...x }));
@@ -1210,6 +1258,7 @@ function updateTimelineScale(anchorFrac = null) {
 }
 function clearSelection() {
   state.selectedSeg = null;
+  state.selectedVideoId = null;
   state.selectedId = null;
   state.selectedVoiceId = null;
   state.selectedFaceId = null;
@@ -1220,10 +1269,11 @@ function clearSelection() {
 }
 function selectOnly(kind, id) {
   state.selectedSeg = kind === 'seg' ? id : null;
+  state.selectedVideoId = kind === 'videoClip' ? id : null;
   state.selectedId = kind === 'marker' ? id : null;
   state.selectedVoiceId = kind === 'voice' ? id : null;
   state.selectedFaceId = kind === 'camera' ? id : null;
-  if (kind !== 'seg') $('segEdit').classList.remove('visible');
+  if (kind !== 'seg' && kind !== 'videoClip') $('segEdit').classList.remove('visible');
   if (kind !== 'marker') $('markerEdit').classList.remove('visible');
   if (kind !== 'voice') $('voiceEdit').classList.remove('visible');
   if (kind !== 'camera') $('cameraEdit').classList.remove('visible');
@@ -1276,6 +1326,9 @@ function applyLanguage() {
     ['#pickerOverlay h2', 'pickerTitle'], ['#pickerOverlay .sub', 'pickerSub'], ['#pickerCancel', 'cancel'],
     ['#diagOverlay h2', 'diagTitle'], ['#diagClose', 'close'], ['#exportOverlay h2', 'exportTitle'],
     ['#addVideoLane', 'addVideoLane'], ['#addVoiceLane', 'addVoiceLane'], ['#addCameraLane', 'addCameraLane'],
+    ['#quickRecordTitle', 'quickRecordTitle'], ['#quickRecordSub', 'quickRecordSub'],
+    ['#quickAddTitle', 'quickAddTitle'], ['#quickAddSub', 'quickAddSub'],
+    ['#quickVoiceTitle', 'quickVoiceTitle'], ['#quickVoiceSub', 'quickVoiceSub'],
   ];
   for (const [sel, key] of textMap) {
     const el = document.querySelector(sel);
@@ -1600,12 +1653,28 @@ $('debugToggle').onclick = () => {
 
 // ---------- File loading ----------
 $('openBtn').onclick = () => $('fileInput').click();
+$('quickAddMedia').onclick = () => $('fileInput').click();
+$('quickRecord').onclick = () => recBtn.click();
+$('quickVoice').onclick = () => $('voiceBtn').click();
 $('fileInput').onchange = e => {
-  const f = e.target.files[0];
-  if (!f) return;
-  if (f.type.startsWith('image/')) loadImage(f);
-  else loadFile(f);
+  const files = [...e.target.files];
+  if (!files.length) return;
+  handleMediaFiles(files);
+  e.target.value = '';
 };
+
+function handleMediaFiles(files) {
+  const json = files.find(f => f.name.endsWith('.json'));
+  const images = files.filter(f => f.type.startsWith('image/'));
+  const videos = files.filter(f => f.type.startsWith('video/'));
+  if (!state.loaded) {
+    if (videos[0]) { pendingOverlayFiles = videos.slice(1); loadFile(videos[0], json); return; }
+    if (images[0]) { loadImage(images[0]); return; }
+  }
+  for (const f of videos) addVideoClip(f);
+  if (!videos.length && images[0]) loadImage(images[0]);
+  if (json && state.loaded) importClicks(json);
+}
 
 const stage = $('stage');
 stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('dragover'); });
@@ -1617,10 +1686,39 @@ stage.addEventListener('drop', e => {
   const vid = files.find(f => f.type.startsWith('video/'));
   const img = files.find(f => f.type.startsWith('image/'));
   const json = files.find(f => f.name.endsWith('.json'));
-  if (vid) loadFile(vid, json);
-  else if (img) loadImage(img);
+  if (vid || img) handleMediaFiles(files);
   else if (json && state.loaded) importClicks(json);
 });
+
+function addVideoClip(file) {
+  if (!state.loaded || state.mode !== 'video') { loadFile(file); return; }
+  const url = URL.createObjectURL(file);
+  const v = document.createElement('video');
+  v.src = url;
+  v.muted = true;
+  v.playsInline = true;
+  v.preload = 'auto';
+  v.onloadedmetadata = () => {
+    commitHistory();
+    const outStart = Math.min(Math.max(0, sourceToOutputTime(video.currentTime)), Math.max(0, outputDuration() - 0.1));
+    const outDuration = Math.min(v.duration || 3, Math.max(0.1, outputDuration() - outStart));
+    const lane = Math.max(1, state.videoLaneCount - 1);
+    state.videoClips.push({
+      id: videoClipId++,
+      outStart,
+      outDuration,
+      mediaOffset: 0,
+      lane,
+      url,
+      video: v,
+      name: file.name || tr('videoClip', videoClipId - 1),
+    });
+    state.videoLaneCount = Math.max(state.videoLaneCount, lane + 1);
+    selectOnly('videoClip', videoClipId - 1);
+    updateSegUI();
+    requestRender();
+  };
+}
 
 // สร้างจุดซูมอัตโนมัติจาก clicks.json ที่ได้จาก record.py
 async function importClicks(file) {
@@ -1664,6 +1762,7 @@ function enterLoadedUI() {
   $('playBtn').disabled = !isVideo;
   $('splitBtn').disabled = !isVideo;
   $('voiceBtn').disabled = !isVideo;
+  $('quickVoice').disabled = !isVideo;
   $('exportBtn').textContent = isVideo ? tr('exportVideo') : tr('exportPng');
   $('imgExportSec').style.display = isVideo ? 'none' : '';
   document.querySelector('.timeline-area').style.display = isVideo ? '' : 'none';
@@ -1680,6 +1779,8 @@ function loadImage(file) {
     state.taps = [];
     state.voiceovers = [];
     state.selectedVoiceId = null;
+    state.videoClips = [];
+    state.selectedVideoId = null;
     state.facecams = [];
     state.selectedFaceId = null;
     state.videoLaneCount = 1;
@@ -1706,6 +1807,8 @@ function loadFile(file, clicksFile) {
     state.taps = [];
     state.voiceovers = [];
     state.selectedVoiceId = null;
+    state.videoClips = [];
+    state.selectedVideoId = null;
     state.facecams = [];
     state.selectedFaceId = null;
     state.videoLaneCount = 1;
@@ -1725,6 +1828,10 @@ function loadFile(file, clicksFile) {
     updateTimelineUI();
     requestRender();
     if (clicksFile) importClicks(clicksFile);
+    if (pendingOverlayFiles.length) {
+      const queued = pendingOverlayFiles.splice(0);
+      queued.forEach(addVideoClip);
+    }
   };
 }
 
@@ -2121,6 +2228,40 @@ function drawFacecamOverlay(L) {
   ctx.restore();
 }
 
+function drawOverlayVideoClips(L) {
+  if (!state.videoClips.length || state.mode !== 'video') return;
+  const outT = sourceToOutputTime(video.currentTime);
+  const active = state.videoClips
+    .filter(c => outT >= clipOutStart(c) && outT <= clipOutStart(c) + clipOutDuration(c))
+    .sort((a, b) => (a.lane || 0) - (b.lane || 0));
+  if (!active.length) return;
+  const c = L.content;
+  for (const clip of active) {
+    const vid = clip.video || document.createElement('video');
+    if (!clip.video) {
+      vid.src = clip.url; vid.muted = true; vid.playsInline = true;
+      clip.video = vid;
+    }
+    const off = Math.max(0, outT - clipOutStart(clip)) + clipMediaOffset(clip);
+    if (vid.readyState >= 1 && Math.abs((vid.currentTime || 0) - off) > 0.12) {
+      try { vid.currentTime = off; } catch {}
+    }
+    if (!video.paused && vid.paused) vid.play().catch(() => {});
+    if (video.paused && !vid.paused) vid.pause();
+    if (vid.readyState < 2) continue;
+    const va = vid.videoWidth / vid.videoHeight || 1;
+    let dw = c.w, dh = dw / va;
+    if (dh < c.h) { dh = c.h; dw = dh * va; }
+    const dx = c.x + (c.w - dw) / 2;
+    const dy = c.y + (c.h - dh) / 2;
+    ctx.save();
+    roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
+    ctx.clip();
+    ctx.drawImage(vid, dx, dy, dw, dh);
+    ctx.restore();
+  }
+}
+
 // วาดตัวช่วยตั้ง crop: หน้าต่างเต็ม + กรอบเขียว = ส่วนที่เก็บไว้ (พื้นที่มืด = ถูกตัด)
 function drawCropGuide() {
   const W = canvas.width, H = canvas.height;
@@ -2211,6 +2352,7 @@ function drawFrame(forExport = false) {
   ctx.drawImage(m.el, sr.sx, sr.sy, sr.sw, sr.sh, content.x, content.y, content.w, content.h);
   ctx.restore();
 
+  drawOverlayVideoClips(L);
   if (state.statusBar !== 'none') drawStatusBar(L);
   if (state.frame === 'browser') drawBrowserChrome(L);
   drawTaps(L, cam);
@@ -2329,7 +2471,7 @@ document.addEventListener('keydown', e => {
   if (!state.loaded || state.mode !== 'video') return;
 
   if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redoEdit() : undoEdit(); return; }
-  if ((mod && key === 'b') || key === 'b' || key === 'c') { e.preventDefault(); splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(); return; }
+  if ((mod && key === 'b') || key === 'b' || key === 'c') { e.preventDefault(); splitVideoClipAtPlayhead() || splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(); return; }
   if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); actionDeleteSelected(); return; }
   if (key === 'i' || key === 'q') { e.preventDefault(); actionTrimStartToPlayhead(); return; }
@@ -2964,6 +3106,14 @@ function actionDeleteSelected() {
     updateTimelineUI(); requestRender();
     return true;
   }
+  if (state.selectedVideoId) {
+    commitHistory();
+    state.videoClips = state.videoClips.filter(x => x.id !== state.selectedVideoId);
+    state.selectedVideoId = null;
+    updateSegUI();
+    requestRender();
+    return true;
+  }
   if (state.selectedVoiceId) {
     commitHistory();
     const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
@@ -2990,6 +3140,22 @@ function actionDeleteSelected() {
     return true;
   }
   return false;
+}
+function splitVideoClipAtPlayhead() {
+  const outT = sourceToOutputTime(video.currentTime);
+  const c = state.videoClips.find(x => outT > clipOutStart(x) + 0.05 && outT < clipOutStart(x) + clipOutDuration(x) - 0.05);
+  if (!c) return false;
+  commitHistory();
+  const leftDur = outT - clipOutStart(c);
+  const rightDur = clipOutDuration(c) - leftDur;
+  const rightVideo = document.createElement('video');
+  rightVideo.src = c.url; rightVideo.muted = true; rightVideo.playsInline = true; rightVideo.preload = 'auto';
+  const right = { ...c, id: videoClipId++, outStart: outT, outDuration: rightDur, start: outputToSourceTime(outT), duration: rightDur, mediaOffset: clipMediaOffset(c) + leftDur, name: tr('videoClip', videoClipId - 1), video: rightVideo };
+  c.outDuration = leftDur; c.duration = leftDur;
+  state.videoClips.push(right);
+  selectOnly('videoClip', right.id);
+  updateSegUI();
+  return true;
 }
 function splitVoiceAtPlayhead() {
   const outT = sourceToOutputTime(video.currentTime);
@@ -3050,7 +3216,7 @@ function updateSegUI() {
   const group = $('videoTrackGroup');
   group.innerHTML = '';
   if (!video.duration) return;
-  const needed = Math.max(1, state.videoLaneCount, ...state.segments.map(s => (s.lane || 0) + 1));
+  const needed = Math.max(1, state.videoLaneCount, ...state.segments.map(s => (s.lane || 0) + 1), ...state.videoClips.map(c => (c.lane || 0) + 1));
   state.videoLaneCount = needed;
   for (let lane = 0; lane < needed; lane++) {
     const row = document.createElement('div');
@@ -3063,7 +3229,22 @@ function updateSegUI() {
       el.style.left = (s.start / video.duration * 100) + '%';
       el.style.width = ((s.end - s.start) / video.duration * 100) + '%';
       el.dataset.id = s.id;
+      el.dataset.kind = 'segment';
       el.innerHTML = `<span class="seg-handle left" data-edge="left"></span><span class="spd">${s.speed}x</span><span class="seg-handle right" data-edge="right"></span>`;
+      track.appendChild(el);
+    }
+    for (const c of state.videoClips.filter(x => (x.lane || 0) === lane)) {
+      const outStart = clipOutStart(c);
+      const outEnd = outStart + clipOutDuration(c);
+      const sourceStart = outputToSourceTime(outStart);
+      const sourceEnd = outputToSourceTime(outEnd);
+      const el = document.createElement('div');
+      el.className = 'seg-block overlay' + (c.id === state.selectedVideoId ? ' selected' : '');
+      el.style.left = (sourceStart / video.duration * 100) + '%';
+      el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
+      el.dataset.id = c.id;
+      el.dataset.kind = 'clip';
+      el.innerHTML = `<span class="seg-handle left" data-edge="left"></span><span class="spd">${c.name || tr('videoClip', c.id)}</span><span class="seg-handle right" data-edge="right"></span>`;
       track.appendChild(el);
     }
     group.appendChild(row);
@@ -3072,12 +3253,21 @@ function updateSegUI() {
   updateVoiceUI();
   updateCameraUI();
   const sel = state.segments.find(s => s.id === state.selectedSeg);
+  const clipSel = state.videoClips.find(c => c.id === state.selectedVideoId);
   const panel = $('segEdit');
-  if (sel) {
+  if (sel || clipSel) {
     panel.classList.add('visible');
-    $('segSpeed').value = String(sel.speed);
-    renderLaneOptions($('segLane'), state.videoLaneCount, sel.lane || 0, 'videoLane');
-    $('segEditLabel').textContent = `🎞 ท่อน ${fmtTime(sel.start)}–${fmtTime(sel.end)}`;
+    const speedWrap = $('segSpeed').closest('span');
+    if (sel) {
+      speedWrap.style.display = '';
+      $('segSpeed').value = String(sel.speed);
+      renderLaneOptions($('segLane'), state.videoLaneCount, sel.lane || 0, 'videoLane');
+      $('segEditLabel').textContent = `🎞 ท่อน ${fmtTime(sel.start)}–${fmtTime(sel.end)}`;
+    } else {
+      speedWrap.style.display = 'none';
+      renderLaneOptions($('segLane'), state.videoLaneCount, clipSel.lane || 0, 'videoLane');
+      $('segEditLabel').textContent = `🎞 ${tr('selectedOverlayVideo')} ${fmtTime(clipOutStart(clipSel))}–${fmtTime(clipOutStart(clipSel) + clipOutDuration(clipSel))}`;
+    }
   } else {
     panel.classList.remove('visible');
   }
@@ -3114,27 +3304,43 @@ let segDrag = null;
 $('videoTrackGroup').addEventListener('pointerdown', e => {
   const block = e.target.closest('.seg-block');
   if (!block) { if (e.target.closest('.seg-track')) clearSelection(); return; }
-  selectOnly('seg', parseInt(block.dataset.id));
-  const s = state.segments.find(x => x.id === state.selectedSeg);
+  const kind = block.dataset.kind || 'segment';
+  const id = parseInt(block.dataset.id);
+  if (kind === 'clip') selectOnly('videoClip', id);
+  else selectOnly('seg', id);
+  const s = kind === 'clip'
+    ? state.videoClips.find(x => x.id === state.selectedVideoId)
+    : state.segments.find(x => x.id === state.selectedSeg);
   if (!s) return;
   const track = block.closest('.seg-track');
   const bounds = track.getBoundingClientRect();
   const edge = e.target.closest('.seg-handle')?.dataset.edge || null;
   const t = (e.clientX - bounds.left) / bounds.width * video.duration;
-  segDrag = { s, edge, offsetStart: t - s.start, offsetEnd: s.end - t };
-  if (edge) commitHistory();
+  const outT = sourceToOutputTime(t);
+  segDrag = kind === 'clip'
+    ? { kind, s, edge, offset: outT - clipOutStart(s) }
+    : { kind, s, edge, offsetStart: t - s.start, offsetEnd: s.end - t };
+  if (edge || kind === 'clip') commitHistory();
   $('videoTrackGroup').setPointerCapture(e.pointerId);
-  video.currentTime = edge === 'right' ? s.end : s.start;
+  video.currentTime = kind === 'clip' ? outputToSourceTime(clipOutStart(s)) : (edge === 'right' ? s.end : s.start);
   updateSegUI();
 });
 $('videoTrackGroup').addEventListener('pointermove', e => {
   if (!segDrag || !video.duration) return;
+  const lane = laneFromPoint('videoTrackGroup', 'seg-track', e.clientX, e.clientY);
+  if (segDrag.kind === 'clip' && lane !== null && !segDrag.edge) segDrag.s.lane = lane;
   const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.seg-track')
     || $('videoTrackGroup').querySelector(`.seg-track[data-lane="${segDrag.s.lane || 0}"]`)
     || $('videoTrackGroup').querySelector('.seg-track');
   const bounds = track.getBoundingClientRect();
   const raw = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
-  if (segDrag.edge === 'left') {
+  if (segDrag.kind === 'clip') {
+    const outT = sourceToOutputTime(raw);
+    if (segDrag.edge === 'left') setClipOutStart(segDrag.s, outT);
+    else if (segDrag.edge === 'right') setClipOutEnd(segDrag.s, outT);
+    else moveClipOut(segDrag.s, outT - segDrag.offset);
+    video.currentTime = outputToSourceTime(clipOutStart(segDrag.s));
+  } else if (segDrag.edge === 'left') {
     segDrag.s.start = raw;
     clampSegment(segDrag.s);
     video.currentTime = segDrag.s.start;
@@ -3143,15 +3349,28 @@ $('videoTrackGroup').addEventListener('pointermove', e => {
     clampSegment(segDrag.s);
     video.currentTime = Math.max(segDrag.s.start, segDrag.s.end - 0.02);
   }
-  updateSegUI();
+  updateSegUI(); requestRender();
 });
-$('videoTrackGroup').addEventListener('pointerup', () => { segDrag = null; });
+$('videoTrackGroup').addEventListener('pointerup', e => {
+  const lane = laneFromPoint('videoTrackGroup', 'seg-track', e.clientX, e.clientY);
+  if (segDrag && segDrag.kind === 'clip' && lane !== null && !segDrag.edge) segDrag.s.lane = lane;
+  segDrag = null;
+  updateSegUI(); requestRender();
+});
 
 $('splitBtn').onclick = () => {
   actionSplitAtPlayhead();
 };
 
 $('segDelete').onclick = () => {
+  if (state.selectedVideoId) {
+    if (!confirm(tr('confirmDeleteVideoClip'))) return;
+    commitHistory();
+    state.videoClips = state.videoClips.filter(c => c.id !== state.selectedVideoId);
+    state.selectedVideoId = null;
+    updateSegUI(); requestRender();
+    return;
+  }
   if (state.segments.length <= 1) { alert(tr('oneSegmentRequired')); return; }
   if (!state.selectedSeg || !confirm(tr('confirmDeleteSegment'))) return;
   commitHistory();
@@ -3171,7 +3390,9 @@ $('segSpeed').addEventListener('change', e => {
   updateSegUI();
 });
 $('segLane').addEventListener('change', e => {
-  const s = state.segments.find(x => x.id === state.selectedSeg);
+  const s = state.selectedVideoId
+    ? state.videoClips.find(x => x.id === state.selectedVideoId)
+    : state.segments.find(x => x.id === state.selectedSeg);
   if (!s) return;
   commitHistory();
   s.lane = parseInt(e.target.value, 10) || 0;
@@ -3345,6 +3566,7 @@ $('newBtn').onclick = () => {
   Object.assign(state, {
     loaded: false, mode: 'video', imageEl: null,
     events: [], taps: [], selectedId: null,
+    videoClips: [], selectedVideoId: null,
     voiceovers: [], selectedVoiceId: null,
     facecams: [], selectedFaceId: null,
     segments: [], selectedSeg: null,
@@ -3360,6 +3582,7 @@ $('newBtn').onclick = () => {
   $('playBtn').disabled = true;
   $('splitBtn').disabled = true;
   $('voiceBtn').disabled = true;
+  $('quickVoice').disabled = true;
   $('exportBtn').disabled = true;
   $('snapBtn').disabled = true;
   $('exportBtn').textContent = tr('exportVideo');
