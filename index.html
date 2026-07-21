@@ -1,0 +1,3620 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self' http://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'">
+<title>ZoomCut — iOS Screen Recording Editor</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --panel: #16181f;
+    --panel2: #1d2029;
+    --border: #2a2e3a;
+    --text: #e8eaf0;
+    --muted: #8a90a0;
+    --accent: #6c7cff;
+    --accent2: #8b5cf6;
+    --danger: #ff5c7a;
+    --timeline-bg: #14161c;
+  }
+  body[data-theme="light"] {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --panel2: #eef1f7;
+    --border: #d7dce8;
+    --text: #151824;
+    --muted: #5f6677;
+    --accent: #315cff;
+    --accent2: #7c3aed;
+    --danger: #d9234e;
+    --timeline-bg: #e4e8f2;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  header .logo {
+    font-weight: 700;
+    font-size: 15px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  header .hint { color: var(--muted); font-size: 12px; }
+  header .spacer { flex: 1; }
+  .btn {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .btn:hover { background: #262a36; border-color: #3a4050; }
+  .btn.primary {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border: none;
+    font-weight: 600;
+  }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  main { flex: 1; display: flex; min-height: 0; }
+  .sidebar {
+    width: 260px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .splitter-vertical {
+    width: 8px;
+    flex: 0 0 8px;
+    cursor: col-resize;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    position: relative;
+    z-index: 5;
+  }
+  .splitter-vertical::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 4px;
+    height: 74px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    background: color-mix(in srgb, var(--muted) 48%, transparent);
+  }
+  .splitter-horizontal {
+    height: 8px;
+    flex: 0 0 8px;
+    cursor: row-resize;
+    background: linear-gradient(180deg, transparent, var(--border), transparent);
+    position: relative;
+    z-index: 5;
+  }
+  .splitter-horizontal::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 96px;
+    height: 4px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    background: color-mix(in srgb, var(--muted) 48%, transparent);
+  }
+  body.resizing { user-select: none; cursor: grabbing; }
+  .sidebar h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin: 18px 0 8px;
+  }
+  .sidebar h3:first-child { margin-top: 0; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    flex: 1;
+    text-align: center;
+    padding: 7px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--muted);
+    background: var(--panel2);
+    transition: all .15s;
+    min-width: 56px;
+  }
+  .chip.active {
+    border-color: var(--accent);
+    color: var(--text);
+    background: rgba(108,124,255,.12);
+  }
+  .slider-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 12px; }
+  .slider-row label { width: 70px; color: var(--muted); flex-shrink: 0; }
+  .slider-row input[type=range] { flex: 1; accent-color: var(--accent); }
+  .slider-row .val { width: 34px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+  .bg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .bg-swatch {
+    aspect-ratio: 1;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color .15s;
+  }
+  .bg-swatch.active { border-color: var(--accent); }
+  .stage-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    min-height: 0;
+    position: relative;
+  }
+  #canvas {
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 10px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.5);
+    cursor: crosshair;
+  }
+  .drop-hint {
+    position: absolute;
+    inset: 24px;
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 14px;
+    pointer-events: none;
+    text-align: center;
+    line-height: 1.7;
+  }
+  .drop-hint .big { font-size: 40px; }
+  .drop-hint strong { color: var(--text); }
+  .stage.dragover .drop-hint { border-color: var(--accent); color: var(--accent); }
+  .timeline-area {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    padding: 12px 16px 16px;
+    flex-shrink: 0;
+    height: 190px;
+    min-height: 118px;
+    overflow: auto;
+  }
+  .transport { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .time-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .timeline-viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+  }
+  .timeline-content {
+    min-width: 100%;
+    transition: width .15s;
+  }
+  .lane-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; }
+  .lane-label { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
+  .lane-row .seg-track, .lane-row .voice-track, .lane-row .camera-track { margin-top: 0; }
+  .timeline {
+    position: relative;
+    height: 46px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .playhead {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: #fff;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .zoom-marker {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    background: linear-gradient(90deg, rgba(108,124,255,.35), rgba(139,92,246,.35));
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    z-index: 2;
+    cursor: grab;
+    min-width: 8px;
+  }
+  .zoom-marker.selected { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
+  .zoom-marker .z-handle {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 8px;
+    cursor: ew-resize;
+    z-index: 3;
+  }
+  .zoom-marker .z-handle.left { left: -1px; }
+  .zoom-marker .z-handle.right { right: -1px; }
+  .seg-track {
+    position: relative;
+    height: 34px;
+    background: repeating-linear-gradient(45deg, var(--timeline-bg), var(--timeline-bg) 6px, var(--panel2) 6px, var(--panel2) 12px);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 8px;
+    user-select: none;
+  }
+  .seg-block {
+    position: absolute;
+    top: 3px; bottom: 3px;
+    background: linear-gradient(180deg, #2f3550, #272c42);
+    border: 1px solid #4a5378;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--text);
+    overflow: hidden;
+    white-space: nowrap;
+    transition: border-color .1s;
+  }
+  .seg-handle {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 10px;
+    cursor: ew-resize;
+    background: rgba(255,255,255,.18);
+    z-index: 2;
+  }
+  .seg-handle.left { left: 0; border-radius: 5px 0 0 5px; }
+  .seg-handle.right { right: 0; border-radius: 0 5px 5px 0; }
+  .seg-block:hover { border-color: var(--accent); }
+  .seg-block.selected { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
+  .seg-block .spd { opacity: .85; font-weight: 600; }
+  .seg-block.fast { background: linear-gradient(180deg, #4a3560, #3a2a4e); }
+  .ruler {
+    position: relative;
+    height: 18px;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ruler-tick {
+    position: absolute;
+    top: 0;
+    transform: translateX(-1px);
+    border-left: 1px solid var(--border);
+    height: 100%;
+    padding-left: 4px;
+  }
+  .voice-track, .camera-track {
+    position: relative;
+    height: 34px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 8px;
+    user-select: none;
+  }
+  .voice-clip {
+    position: absolute;
+    top: 3px; bottom: 3px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, rgba(67,233,123,.45), rgba(56,249,215,.35));
+    border: 1px solid rgba(67,233,123,.85);
+    color: var(--text);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .camera-track { height: 32px; }
+  .camera-clip {
+    position: absolute;
+    top: 3px; bottom: 3px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, rgba(79,172,254,.48), rgba(0,242,254,.32));
+    border: 1px solid rgba(79,172,254,.9);
+    color: var(--text);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .camera-clip.selected { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
+  .clip-handle {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 9px;
+    cursor: ew-resize;
+    background: rgba(255,255,255,.22);
+    z-index: 3;
+  }
+  .clip-handle.left { left: 0; border-radius: 5px 0 0 5px; }
+  .clip-handle.right { right: 0; border-radius: 0 5px 5px 0; }
+  .voice-clip.selected { border-color: #fff; box-shadow: 0 0 0 1px #fff inset; }
+  .voice-wave {
+    position: absolute;
+    inset: 4px 6px;
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    opacity: .82;
+    pointer-events: none;
+  }
+  .voice-wave span {
+    flex: 1;
+    min-width: 1px;
+    background: rgba(255,255,255,.86);
+    border-radius: 2px;
+  }
+  .voice-label {
+    position: relative;
+    z-index: 1;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: rgba(0,0,0,.28);
+    pointer-events: none;
+  }
+  .voice-tools {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 240px;
+  }
+  .level-meter {
+    width: 70px;
+    height: 8px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--panel2);
+  }
+  .level-meter > div {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #43e97b, #fee140, var(--danger));
+    transition: width .06s linear;
+  }
+  .shortcut-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .shortcut-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 10px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 1px 5px;
+    background: var(--panel);
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .speed-select {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 5px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .zoom-marker .zlabel {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    font-size: 10px;
+    color: var(--text);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .marker-edit {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    flex-wrap: wrap;
+  }
+  .marker-edit.visible { display: flex; }
+  .marker-edit label { color: var(--muted); }
+  .marker-edit input[type=range] { width: 90px; accent-color: var(--accent); vertical-align: middle; }
+  .marker-edit .val { font-variant-numeric: tabular-nums; display: inline-block; width: 36px; }
+  .btn.small { padding: 4px 10px; font-size: 12px; }
+  .btn.danger { border-color: rgba(255,92,122,.4); color: var(--danger); }
+  .btn.danger:hover { background: rgba(255,92,122,.1); }
+  .btn.recording {
+    background: rgba(255,92,122,.15);
+    border-color: var(--danger);
+    color: var(--danger);
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse { 50% { opacity: .55; } }
+  #exportOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  #exportOverlay.visible { display: flex; }
+  .export-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px 36px;
+    text-align: center;
+    min-width: 300px;
+  }
+  .export-box h2 { font-size: 16px; margin-bottom: 14px; }
+  .progress-bar {
+    height: 8px;
+    background: var(--panel2);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .progress-bar > div {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width .2s;
+  }
+  .export-box .sub { font-size: 12px; color: var(--muted); }
+  #pickerOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 90;
+  }
+  #pickerOverlay.visible { display: flex; }
+  #diagOverlay, #shortcutOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.68);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 95;
+  }
+  #diagOverlay.visible, #shortcutOverlay.visible { display: flex; }
+  .diag-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    width: 560px;
+    max-height: 78vh;
+    overflow: auto;
+  }
+  .diag-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .diag-head h2 { font-size: 15px; }
+  .diag-list { display: grid; gap: 8px; }
+  .diag-item {
+    display: grid;
+    grid-template-columns: 22px 1fr;
+    gap: 8px;
+    padding: 9px 10px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .diag-item .name { font-weight: 650; color: var(--text); }
+  .diag-item .detail { color: var(--muted); margin-top: 2px; word-break: break-word; }
+  .picker-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    width: 440px;
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .picker-box h2 { font-size: 15px; margin-bottom: 4px; }
+  .picker-box .sub { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .picker-list { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    text-align: left;
+  }
+  .picker-item:hover { border-color: var(--accent); background: rgba(108,124,255,.08); }
+  .picker-item .icon { font-size: 20px; flex-shrink: 0; }
+  .picker-item .info { min-width: 0; }
+  .picker-item .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-item .detail { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-cancel { margin-top: 12px; align-self: flex-end; }
+  input[type=file] { display: none; }
+  input[type=color] {
+    width: 34px; height: 30px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--panel2);
+    cursor: pointer;
+    padding: 2px;
+  }
+  .mini-select {
+    flex: 1;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 12px;
+    min-width: 0;
+  }
+  .url-input {
+    width: 100%;
+    margin-top: 6px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .phone-swatch {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+  }
+  .phone-swatch.active { border-color: var(--accent); }
+  .tip {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.6;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">🎬 ZoomCut</span>
+  <span class="hint" id="appHint">อัดหน้าจอ iPhone (Control Center) → ลากไฟล์มาที่นี่ → คลิกจุดที่อยากซูม → Export</span>
+  <span class="spacer"></span>
+  <select id="langSel" class="mini-select" style="width:78px;flex:0 0 auto" title="Language">
+    <option value="th">TH</option>
+    <option value="en">EN</option>
+  </select>
+  <button class="btn" id="themeBtn" title="Light/Dark mode">🌙</button>
+  <button class="btn" id="shortcutBtn" title="Keyboard shortcuts">⌨️</button>
+  <button class="btn" id="newBtn" title="เริ่มงานชิ้นใหม่ (ล้างงานปัจจุบัน)">🆕 งานใหม่</button>
+  <button class="btn" id="diagBtn" style="display:none" title="ตรวจระบบอัดหน้าจอ/ffmpeg/click hook">🩺 ตรวจระบบ</button>
+  <button class="btn" id="recBtn" style="display:none">🔴 อัดหน้าจอ</button>
+  <button class="btn" id="openBtn">📂 เปิดวิดีโอ/รูป</button>
+  <button class="btn" id="snapBtn" disabled title="บันทึกเฟรมปัจจุบันเป็น PNG">📸</button>
+  <button class="btn primary" id="exportBtn" disabled>⬇️ Export วิดีโอ</button>
+</header>
+
+<main>
+  <div class="sidebar">
+    <h3>Preset</h3>
+    <div class="row">
+      <select id="presetSel" class="mini-select"><option value="">— เลือก preset —</option></select>
+      <button class="btn small" id="presetSave" title="บันทึกค่าปัจจุบันเป็น preset">💾</button>
+      <button class="btn small danger" id="presetDel" title="ลบ preset ที่เลือก">🗑</button>
+    </div>
+
+    <h3>สัดส่วนภาพ</h3>
+    <div class="row" id="aspectRow">
+      <div class="chip" data-aspect="16:9">16:9</div>
+      <div class="chip active" data-aspect="9:16">9:16</div>
+      <div class="chip" data-aspect="4:5">4:5</div>
+      <div class="chip" data-aspect="1:1">1:1</div>
+      <div class="chip" data-aspect="fit" title="พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ">📐 พอดีเฟรม</div>
+    </div>
+
+    <h3>ตำแหน่งแนวตั้ง</h3>
+    <div class="row" id="posRow">
+      <div class="chip" data-pos="top">บน</div>
+      <div class="chip active" data-pos="center">กลาง</div>
+      <div class="chip" data-pos="bottom">ล่าง</div>
+    </div>
+
+    <h3>กรอบอุปกรณ์</h3>
+    <div class="row" id="frameRow">
+      <div class="chip active" data-frame="none">ไม่มี</div>
+      <div class="chip" data-frame="iphone">📱 iPhone</div>
+      <div class="chip" data-frame="browser">🖥 เบราว์เซอร์</div>
+    </div>
+    <div class="row" id="phoneColors" style="margin-top:8px; display:none; gap:8px"></div>
+    <input type="text" id="urlText" class="url-input" placeholder="yourwebsite.com" style="display:none">
+
+    <h3>Status Bar (iPhone)</h3>
+    <div class="row" id="sbRow">
+      <div class="chip active" data-sb="none">ปิด</div>
+      <div class="chip" data-sb="auto">ออโต้</div>
+      <div class="chip" data-sb="light">สว่าง</div>
+      <div class="chip" data-sb="dark">มืด</div>
+    </div>
+
+    <h3>เอฟเฟกต์จุดแตะ</h3>
+    <div class="row" id="tapRow">
+      <div class="chip active" data-tap="on">💧 แสดง</div>
+      <div class="chip" data-tap="off">ปิด</div>
+    </div>
+
+    <h3>พื้นหลัง</h3>
+    <div class="bg-grid" id="bgGrid"></div>
+    <div class="row" style="margin-top:8px; align-items:center">
+      <input type="color" id="cg1" value="#0ea5e9" title="gradient กำหนดเอง สี 1">
+      <input type="color" id="cg2" value="#8b5cf6" title="gradient กำหนดเอง สี 2">
+      <div class="chip" id="bgImageBtn" title="อัปโหลดรูปพื้นหลัง">🖼 รูป</div>
+      <div class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</div>
+    </div>
+
+    <h3>เฟรมวิดีโอ</h3>
+    <div class="slider-row">
+      <label>ขอบรอบ</label>
+      <input type="range" id="padding" min="0" max="20" value="0">
+      <span class="val" id="paddingVal">0%</span>
+    </div>
+    <div class="slider-row">
+      <label>ขอบมน</label>
+      <input type="range" id="radius" min="0" max="8" value="3" step="0.5">
+      <span class="val" id="radiusVal">3%</span>
+    </div>
+    <div class="slider-row">
+      <label>เงา</label>
+      <input type="range" id="shadow" min="0" max="100" value="60">
+      <span class="val" id="shadowVal">60</span>
+    </div>
+
+    <h3>ตัดขอบ (Crop)</h3>
+    <div class="tip" style="margin-top:0">ตัดขอบหน้าต่าง iPhone Mirroring ออก เพื่อไม่ให้เห็นขอบตอนซูม</div>
+    <div class="slider-row">
+      <label>บน</label>
+      <input type="range" id="cropT" min="0" max="40" value="0" step="0.5">
+      <span class="val" id="cropTVal">0%</span>
+    </div>
+    <div class="slider-row">
+      <label>ล่าง</label>
+      <input type="range" id="cropB" min="0" max="40" value="0" step="0.5">
+      <span class="val" id="cropBVal">0%</span>
+    </div>
+    <div class="slider-row">
+      <label>ซ้าย</label>
+      <input type="range" id="cropL" min="0" max="40" value="0" step="0.5">
+      <span class="val" id="cropLVal">0%</span>
+    </div>
+    <div class="slider-row">
+      <label>ขวา</label>
+      <input type="range" id="cropR" min="0" max="40" value="0" step="0.5">
+      <span class="val" id="cropRVal">0%</span>
+    </div>
+    <div class="row">
+      <div class="chip" id="cropReset">↺ ล้าง crop</div>
+      <div class="chip" id="cropToggle" title="สลับแสดง/ซ่อนขอบที่จะถูกตัด">👁 ดูขอบ</div>
+      <div class="chip" id="debugToggle" title="แสดงพิกัด crop/source/camera สำหรับตรวจ zoom">🧭 Debug</div>
+    </div>
+
+    <h3>ค่าเริ่มต้นการซูม</h3>
+    <div class="row" id="zoomStyleRow">
+      <div class="chip active" data-zoom-style="subtle">Subtle</div>
+      <div class="chip" data-zoom-style="focus">Focus</div>
+      <div class="chip" data-zoom-style="fast">Fast</div>
+      <div class="chip" data-zoom-style="cinematic">Cinematic</div>
+      <div class="chip" data-zoom-style="taponly">Tap only</div>
+    </div>
+    <div class="slider-row">
+      <label>ระดับซูม</label>
+      <input type="range" id="defZoom" min="1.2" max="4" value="1.2" step="0.1">
+      <span class="val" id="defZoomVal">1.2x</span>
+    </div>
+    <div class="slider-row">
+      <label>ค้างไว้</label>
+      <input type="range" id="defHold" min="0.1" max="6" value="1" step="0.1">
+      <span class="val" id="defHoldVal">1.0s</span>
+    </div>
+
+    <div id="imgExportSec" style="display:none">
+      <h3>ความละเอียด Export (PNG)</h3>
+      <div class="row" id="scaleRow">
+        <div class="chip" data-scale="1">1x</div>
+        <div class="chip active" data-scale="2">2x</div>
+        <div class="chip" data-scale="3">3x</div>
+      </div>
+    </div>
+    <div class="tip">
+      💡 <b>วิธีใช้:</b> เล่นวิดีโอถึงจังหวะที่กดปุ่มในแอป แล้ว<b>คลิกบนวิดีโอ</b>ตรงจุดนั้น — โปรแกรมจะซูมเข้า-ออกให้อัตโนมัติแบบนุ่มๆ<br><br>
+      ลาก marker บน timeline เพื่อย้ายเวลา, คลิก marker เพื่อแก้ระดับซูม/ลบ
+    </div>
+  </div>
+
+  <div class="splitter-vertical" id="sidebarSplitter" title="Drag to resize sidebar"></div>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <canvas id="canvas" width="1080" height="1920" style="display:none"></canvas>
+      <div class="drop-hint" id="dropHint">
+        <div class="big">📱</div>
+        <div><strong>ลากไฟล์วิดีโออัดหน้าจอ iPhone มาวางที่นี่</strong><br>
+        หรือกดปุ่ม "เปิดวิดีโอ" ด้านบน<br>
+        <span style="font-size:12px">อัดเองจาก iPhone: Control Center → ปุ่มอัดหน้าจอ → AirDrop มาที่ Mac<br>
+        หรืออัดผ่าน Mac ด้วย <b>python3 record.py</b> แล้วลากไฟล์ .mp4 + .clicks.json มาพร้อมกัน → ซูมอัตโนมัติทุกจุดที่คลิก</span></div>
+      </div>
+    </div>
+
+    <div class="splitter-horizontal" id="timelineSplitter" title="Drag to resize timeline"></div>
+
+    <div class="timeline-area">
+      <div class="transport">
+        <button class="btn small" id="playBtn" disabled>▶️ เล่น</button>
+        <button class="btn small" id="splitBtn" disabled title="แบ่งท่อนตรงตำแหน่งหัวอ่าน">✂️ แบ่งท่อน</button>
+        <button class="btn small" id="voiceBtn" disabled title="อัดเสียงบรรยายเริ่มที่ playhead">🎙 Voice over</button>
+        <div class="voice-tools">
+          <select id="micSel" class="mini-select" title="Microphone source"></select>
+          <select id="camSel" class="mini-select" title="Camera source"></select>
+          <button class="btn small" id="camToggle" title="Record camera overlay with voiceover">📷</button>
+          <div class="level-meter" title="Mic level"><div id="micLevel"></div></div>
+        </div>
+        <span class="time-label" id="timeLabel">0:00.0 / 0:00.0</span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="time-label" id="zoomCount"></span>
+      </div>
+      <div class="timeline-viewport" id="timelineViewport">
+        <div class="timeline-content" id="timelineContent">
+          <div class="ruler" id="ruler"></div>
+          <div class="timeline" id="timeline">
+            <div class="playhead" id="playhead" style="left:0"></div>
+          </div>
+          <div class="lane-row"><div class="lane-label" id="videoLaneLabel">Video</div><div class="seg-track" id="segTrack"></div></div>
+          <div class="lane-row"><div class="lane-label" id="voiceLaneLabel">Voice</div><div class="voice-track" id="voiceTrack"></div></div>
+          <div class="lane-row"><div class="lane-label" id="cameraLaneLabel">Camera</div><div class="camera-track" id="cameraTrack"></div></div>
+        </div>
+      </div>
+      <div class="marker-edit" id="cameraEdit">
+        <span id="cameraEditLabel">📷 Camera overlay</span>
+        <span><label>Position </label>
+          <select class="speed-select" id="camPos">
+            <option value="bottom-right">Bottom right</option>
+            <option value="bottom-left">Bottom left</option>
+            <option value="top-right">Top right</option>
+            <option value="top-left">Top left</option>
+            <option value="bottom-center">Bottom center</option>
+          </select>
+        </span>
+        <span><label>Shape </label>
+          <select class="speed-select" id="camShape">
+            <option value="circle">Circle</option>
+            <option value="rounded">Rounded</option>
+          </select>
+        </span>
+        <span><label>Size </label><input type="range" id="camSize" min="12" max="40" step="1"> <span class="val" id="camSizeVal">22%</span></span>
+        <span><label>Margin </label><input type="range" id="camMargin" min="1" max="10" step="0.5"> <span class="val" id="camMarginVal">3.5%</span></span>
+        <span><label>Fade in </label><input type="range" id="camFadeIn" min="0" max="2" step="0.1"> <span class="val" id="camFadeInVal">0.3s</span></span>
+        <span><label>Fade out </label><input type="range" id="camFadeOut" min="0" max="2" step="0.1"> <span class="val" id="camFadeOutVal">0.3s</span></span>
+        <button class="btn small danger" id="cameraDelete">🗑 Delete camera</button>
+      </div>
+      <div class="marker-edit" id="voiceEdit">
+        <span id="voiceEditLabel">🎙 Voice over</span>
+        <button class="btn small danger" id="voiceDelete">🗑 ลบเสียงนี้</button>
+      </div>
+      <div class="marker-edit" id="segEdit">
+        <span id="segEditLabel">🎞 ท่อนที่เลือก</span>
+        <span><label>ความเร็ว </label>
+          <select class="speed-select" id="segSpeed">
+            <option value="0.25">0.25x</option>
+            <option value="0.5">0.5x</option>
+            <option value="0.75">0.75x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+            <option value="3">3x</option>
+            <option value="4">4x</option>
+          </select>
+        </span>
+        <button class="btn small danger" id="segDelete">🗑 ตัดท่อนนี้ออก</button>
+      </div>
+      <div class="marker-edit" id="markerEdit">
+        <span>🔍 Zoom marker</span>
+        <span><label>ระดับ </label><input type="range" id="mZoom" min="1.2" max="4" step="0.1"> <span class="val" id="mZoomVal"></span></span>
+        <span><label>เข้า </label><input type="range" id="mIn" min="0.1" max="2" step="0.05"> <span class="val" id="mInVal"></span></span>
+        <span><label>ค้างไว้ </label><input type="range" id="mHold" min="0.1" max="8" step="0.1"> <span class="val" id="mHoldVal"></span></span>
+        <span><label>ออก </label><input type="range" id="mOut" min="0.1" max="2" step="0.05"> <span class="val" id="mOutVal"></span></span>
+        <button class="btn small" id="mGrowL" title="ขยายช่วงซูมไปทางซ้าย 0.25 วิ">← ขยาย</button>
+        <button class="btn small" id="mGrowR" title="ขยายช่วงซูมไปทางขวา 0.25 วิ">ขยาย →</button>
+        <button class="btn small danger" id="mDelete">🗑 ลบ</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="pickerOverlay">
+  <div class="picker-box">
+    <h2>เลือกสิ่งที่จะอัด</h2>
+    <div class="sub">เหมือนแชร์จอใน meeting — เลือกหน้าต่างที่ต้องการ แล้วทุกคลิกจะกลายเป็นจุดซูมอัตโนมัติ</div>
+    <div class="picker-list" id="pickerList"></div>
+    <button class="btn small picker-cancel" id="pickerCancel">ยกเลิก</button>
+  </div>
+</div>
+
+<div id="diagOverlay">
+  <div class="diag-box">
+    <div class="diag-head">
+      <h2>ตรวจระบบ ZoomCut</h2>
+      <button class="btn small" id="diagClose">ปิด</button>
+    </div>
+    <div class="diag-list" id="diagList"></div>
+    <div class="tip" id="diagTip" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<div id="shortcutOverlay">
+  <div class="diag-box">
+    <div class="diag-head">
+      <h2 id="shortcutTitle">Keyboard shortcuts</h2>
+      <button class="btn small" id="shortcutClose">ปิด</button>
+    </div>
+    <div class="shortcut-grid" id="shortcutGrid"></div>
+  </div>
+</div>
+
+<div id="exportOverlay">
+  <div class="export-box">
+    <h2>กำลัง Export วิดีโอ…</h2>
+    <div class="progress-bar"><div id="exportProgress"></div></div>
+    <div class="sub" id="exportSub">กำลังเรนเดอร์แบบเรียลไทม์ — อย่าปิดหรือสลับไปแท็บอื่น (ต้องให้แท็บนี้แสดงอยู่)</div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="video/*,image/*">
+<input type="file" id="bgImageInput" accept="image/*">
+<video id="video" style="display:none" playsinline></video>
+
+<script>
+'use strict';
+
+// ---------- State ----------
+const $ = id => document.getElementById(id);
+const video = $('video');
+const canvas = $('canvas');
+const ctx = canvas.getContext('2d');
+
+const state = {
+  loaded: false,
+  mode: 'video',   // 'video' | 'image'
+  imageEl: null,
+  aspect: '9:16',
+  posV: 'center',
+  bg: 0,
+  bgType: 'preset', // 'preset' | 'custom' | 'image' | 'transparent'
+  bgImageEl: null,
+  padding: 0,      // % of min canvas dimension
+  radius: 3,       // % of min canvas dimension
+  shadow: 60,
+  crop: { t: 0, r: 0, b: 0, l: 0 }, // ตัดขอบ (เศษส่วน 0..~0.4 ของแต่ละด้าน)
+  frame: 'none',   // 'none' | 'iphone' | 'browser'
+  frameColor: '#2e2c2e',
+  urlText: '',
+  statusBar: 'none', // 'none' | 'auto' | 'light' | 'dark'
+  showTaps: true,
+  debugOverlay: false,
+  taps: [],        // {t, x, y} จาก clicks.json — ใช้วาด ripple
+  defZoom: 1.2,
+  defHold: 1.0,
+  zoomStyle: 'subtle',
+  exportScale: 2,
+  segments: [],    // {id, start, end, speed} — ท่อนที่เก็บไว้ (ช่องว่างระหว่างท่อน = ถูกตัดออก)
+  selectedSeg: null,
+  events: [],      // {id, start, x, y, zoom, tIn, hold, tOut}
+  selectedId: null,
+  voiceovers: [],  // {id, start, duration, blob, url, name}
+  selectedVoiceId: null,
+  selectedMicId: localStorage.getItem('zoomcut-mic') || '',
+  facecams: [],    // {id, outStart, outDuration, blob, url, fadeIn, fadeOut, video}
+  selectedFaceId: null,
+  selectedCamId: localStorage.getItem('zoomcut-camera') || '',
+  recordCamera: localStorage.getItem('zoomcut-record-camera') === '1',
+  camDefaults: { pos: 'bottom-right', shape: 'circle', size: 22, margin: 3.5, fadeIn: 0.3, fadeOut: 0.3 },
+  theme: localStorage.getItem('zoomcut-theme') || 'dark',
+  lang: localStorage.getItem('zoomcut-lang') || 'th',
+  timelineZoom: 1,
+  exporting: false,
+};
+let nextId = 1;
+let voiceId = 1;
+let faceId = 1;
+const history = { undo: [], redo: [] };
+function eventDuration(ev) { return ev.tIn + ev.hold + ev.tOut; }
+function eventEnd(ev) { return ev.start + eventDuration(ev); }
+function setEventEnd(ev, end) {
+  const minDur = ev.tIn + ev.tOut + 0.1;
+  const maxEnd = state.mode === 'video' && video.duration ? video.duration : Infinity;
+  end = Math.min(maxEnd, Math.max(ev.start + minDur, end));
+  ev.hold = Math.max(0.1, end - ev.start - ev.tIn - ev.tOut);
+}
+function shiftEventStart(ev, start) {
+  const end = eventEnd(ev);
+  const minDur = ev.tIn + ev.tOut + 0.1;
+  ev.start = Math.max(0, Math.min(end - minDur, start));
+  ev.hold = Math.max(0.1, end - ev.start - ev.tIn - ev.tOut);
+}
+function normalizeEventTiming(ev) {
+  if (state.mode !== 'video' || !video.duration) return;
+  ev.tIn = Math.max(0.1, ev.tIn);
+  ev.tOut = Math.max(0.1, ev.tOut);
+  const minDur = ev.tIn + ev.tOut + 0.1;
+  ev.start = Math.max(0, Math.min(ev.start, Math.max(0, video.duration - minDur)));
+  setEventEnd(ev, Math.min(video.duration, eventEnd(ev)));
+}
+
+const ASPECTS = { '16:9': [1920, 1080], '9:16': [1080, 1920], '4:5': [1080, 1350], '1:1': [1080, 1080] };
+function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+const ZOOM_STYLES = {
+  subtle: { zoom: 1.2, tIn: 0.55, hold: 1.0, tOut: 0.5, mergeWindow: 0.6, mergeDist: 0.16, tapOnly: false },
+  focus: { zoom: 1.6, tIn: 0.65, hold: 1.25, tOut: 0.65, mergeWindow: 0.8, mergeDist: 0.2, tapOnly: false },
+  fast: { zoom: 1.35, tIn: 0.28, hold: 0.55, tOut: 0.28, mergeWindow: 0.35, mergeDist: 0.12, tapOnly: false },
+  cinematic: { zoom: 1.45, tIn: 0.9, hold: 1.4, tOut: 0.9, mergeWindow: 1.0, mergeDist: 0.22, tapOnly: false },
+  taponly: { zoom: 1, tIn: 0.1, hold: 0.1, tOut: 0.1, mergeWindow: 0, mergeDist: 0, tapOnly: true },
+};
+function currentZoomStyle() { return ZOOM_STYLES[state.zoomStyle] || ZOOM_STYLES.subtle; }
+const I18N = {
+  th: {
+    hint: 'อัดหน้าจอ iPhone (Control Center) → ลากไฟล์มาที่นี่ → คลิกจุดที่อยากซูม → Export',
+    newJob: '🆕 งานใหม่', diagnostics: '🩺 ตรวจระบบ', record: '🔴 อัดหน้าจอ',
+    open: '📂 เปิดวิดีโอ/รูป', exportVideo: '⬇️ Export วิดีโอ', exportPng: '⬇️ Export PNG',
+    play: '▶️ เล่น', pause: '⏸ หยุด', split: '✂️ แบ่งท่อน',
+    voice: '🎙 Voice over', stopVoice: '⏹ หยุดเสียง', recordingVoice: '🔴 กำลังอัดเสียง',
+    output: 'ผลลัพธ์', zoomPoints: n => `🔍 ${n} จุดซูม`, voiceClip: n => `เสียง ${n}`,
+    recStarting: '⏳ กำลังเริ่ม...', recStopping: '⏳ กำลังปิดไฟล์...', recProcessing: '⏳ กำลังแปลงไฟล์…',
+    shortcuts: 'คีย์ลัด',
+    close: 'ปิด',
+    preset: 'Preset', aspect: 'สัดส่วนภาพ', fitFrame: '📐 พอดีเฟรม', verticalPosition: 'ตำแหน่งแนวตั้ง',
+    top: 'บน', center: 'กลาง', bottom: 'ล่าง', deviceFrame: 'กรอบอุปกรณ์', none: 'ไม่มี',
+    browser: '🖥 เบราว์เซอร์', statusBar: 'Status Bar (iPhone)', off: 'ปิด', auto: 'ออโต้',
+    light: 'สว่าง', dark: 'มืด', tapEffect: 'เอฟเฟกต์จุดแตะ', show: '💧 แสดง',
+    background: 'พื้นหลัง', imageBg: '🖼 รูป', transparent: '⬜ ใส', videoFrame: 'เฟรมวิดีโอ',
+    padding: 'ขอบรอบ', radius: 'ขอบมน', shadow: 'เงา', crop: 'ตัดขอบ (Crop)',
+    cropTip: 'ตัดขอบหน้าต่าง iPhone Mirroring ออก เพื่อไม่ให้เห็นขอบตอนซูม',
+    cropTop: 'บน', cropBottom: 'ล่าง', cropLeft: 'ซ้าย', cropRight: 'ขวา',
+    cropReset: '↺ ล้าง crop', cropGuide: '👁 ดูขอบ', zoomDefaults: 'ค่าเริ่มต้นการซูม',
+    zoomLevel: 'ระดับซูม', hold: 'ค้างไว้', exportResolution: 'ความละเอียด Export (PNG)',
+    helpTip: '💡 <b>วิธีใช้:</b> เล่นวิดีโอถึงจังหวะที่กดปุ่มในแอป แล้ว<b>คลิกบนวิดีโอ</b>ตรงจุดนั้น — โปรแกรมจะซูมเข้า-ออกให้อัตโนมัติแบบนุ่มๆ<br><br>ลาก marker บน timeline เพื่อย้ายเวลา, คลิก marker เพื่อแก้ระดับซูม/ลบ',
+    dropHint: '<div class="big">📱</div><div><strong>ลากไฟล์วิดีโออัดหน้าจอ iPhone มาวางที่นี่</strong><br>หรือกดปุ่ม "เปิดวิดีโอ" ด้านบน<br><span style="font-size:12px">อัดเองจาก iPhone: Control Center → ปุ่มอัดหน้าจอ → AirDrop มาที่ Mac<br>หรืออัดผ่าน Mac ด้วย <b>python3 record.py</b> แล้วลากไฟล์ .mp4 + .clicks.json มาพร้อมกัน → ซูมอัตโนมัติทุกจุดที่คลิก</span></div>',
+    voiceDelete: '🗑 ลบเสียงนี้', selectedSegment: '🎞 ท่อนที่เลือก', speed: 'ความเร็ว',
+    segDelete: '🗑 ตัดท่อนนี้ออก', zoomMarker: '🔍 Zoom marker', zoomIn: 'เข้า', zoomOut: 'ออก',
+    growLeft: '← ขยาย', growRight: 'ขยาย →', delete: '🗑 ลบ',
+    pickerTitle: 'เลือกสิ่งที่จะอัด', pickerSub: 'เหมือนแชร์จอใน meeting — เลือกหน้าต่างที่ต้องการ แล้วทุกคลิกจะกลายเป็นจุดซูมอัตโนมัติ',
+    cancel: 'ยกเลิก', diagTitle: 'ตรวจระบบ ZoomCut', exportTitle: 'กำลัง Export วิดีโอ…',
+    exportSub: 'กำลังเรนเดอร์แบบเรียลไทม์ — อย่าปิดหรือสลับไปแท็บอื่น (ต้องให้แท็บนี้แสดงอยู่)',
+    micDefault: 'ไมค์เริ่มต้น', micLoading: 'กำลังโหลดไมค์...', micNoDevices: 'ไม่พบไมค์',
+    camDefault: 'กล้องเริ่มต้น', camLoading: 'กำลังโหลดกล้อง...', camNoDevices: 'ไม่พบกล้อง',
+    camOn: '📷 กล้อง', camOff: '📷 ปิดกล้อง', cameraClip: n => `กล้อง ${n}`,
+    cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 ลบกล้อง', fadeIn: 'Fade in', fadeOut: 'Fade out',
+    videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
+    micPermission: 'เปิดไมโครโฟนไม่ได้ — ตรวจสิทธิ์ Microphone ให้ ZoomCut',
+    promptCancel: 'ยกเลิก', promptOk: 'ตกลง', presetPlaceholder: '— เลือก preset —',
+    newConfirm: 'เริ่มงานชิ้นใหม่? งานปัจจุบัน (วิดีโอ จุดซูม trim) จะถูกล้างทั้งหมด',
+    oneSegmentRequired: 'ต้องเหลืออย่างน้อย 1 ท่อน',
+    exportRemuxing: 'กำลังแปลงไฟล์ให้เล่นได้ลื่น…',
+    exportSegment: (i, n, done, total, speed) => `ท่อน ${i}/${n} • ${done} / ${total} — ${speed}x`,
+    actionableSuffix: '\n\nถ้าเพิ่งให้สิทธิ์ใน macOS ให้ปิด ZoomCut แล้วเปิดใหม่อีกครั้ง',
+  },
+  en: {
+    hint: 'Record or import a screen video → click points to auto zoom → export',
+    newJob: '🆕 New', diagnostics: '🩺 Diagnostics', record: '🔴 Record',
+    open: '📂 Open video/image', exportVideo: '⬇️ Export video', exportPng: '⬇️ Export PNG',
+    play: '▶️ Play', pause: '⏸ Pause', split: '✂️ Split',
+    voice: '🎙 Voice over', stopVoice: '⏹ Stop voice', recordingVoice: '🔴 Recording voice',
+    output: 'output', zoomPoints: n => `🔍 ${n} zooms`, voiceClip: n => `Voice ${n}`,
+    recStarting: '⏳ Starting...', recStopping: '⏳ Closing file...', recProcessing: '⏳ Processing…',
+    shortcuts: 'Keyboard shortcuts',
+    close: 'Close',
+    preset: 'Preset', aspect: 'Aspect ratio', fitFrame: '📐 Fit frame', verticalPosition: 'Vertical position',
+    top: 'Top', center: 'Center', bottom: 'Bottom', deviceFrame: 'Device frame', none: 'None',
+    browser: '🖥 Browser', statusBar: 'Status bar (iPhone)', off: 'Off', auto: 'Auto',
+    light: 'Light', dark: 'Dark', tapEffect: 'Tap effect', show: '💧 Show',
+    background: 'Background', imageBg: '🖼 Image', transparent: '⬜ Transparent', videoFrame: 'Video frame',
+    padding: 'Padding', radius: 'Radius', shadow: 'Shadow', crop: 'Crop',
+    cropTip: 'Crop the iPhone Mirroring window edges so they do not appear during zooms.',
+    cropTop: 'Top', cropBottom: 'Bottom', cropLeft: 'Left', cropRight: 'Right',
+    cropReset: '↺ Reset crop', cropGuide: '👁 Crop guide', zoomDefaults: 'Default zoom',
+    zoomLevel: 'Zoom level', hold: 'Hold', exportResolution: 'Export resolution (PNG)',
+    helpTip: '💡 <b>How to use:</b> Play to the moment you tap in the app, then <b>click the video</b> at that point. ZoomCut will animate the zoom in and out smoothly.<br><br>Drag markers on the timeline to move them, or click a marker to edit zoom/delete it.',
+    dropHint: '<div class="big">📱</div><div><strong>Drop an iPhone screen recording here</strong><br>or click "Open video/image" above<br><span style="font-size:12px">Record on iPhone from Control Center, then AirDrop it to your Mac<br>or record on Mac with <b>python3 record.py</b> and drop the .mp4 + .clicks.json together for automatic click zooms</span></div>',
+    voiceDelete: '🗑 Delete voice', selectedSegment: '🎞 Selected segment', speed: 'Speed',
+    segDelete: '🗑 Delete segment', zoomMarker: '🔍 Zoom marker', zoomIn: 'In', zoomOut: 'Out',
+    growLeft: '← Extend', growRight: 'Extend →', delete: '🗑 Delete',
+    pickerTitle: 'Choose what to record', pickerSub: 'Pick a screen or window. Every click becomes an automatic zoom point.',
+    cancel: 'Cancel', diagTitle: 'ZoomCut diagnostics', exportTitle: 'Exporting video…',
+    exportSub: 'Rendering in real time. Keep this window visible until export finishes.',
+    micDefault: 'Default microphone', micLoading: 'Loading mics...', micNoDevices: 'No microphones found',
+    camDefault: 'Default camera', camLoading: 'Loading cameras...', camNoDevices: 'No cameras found',
+    camOn: '📷 Camera', camOff: '📷 Camera off', cameraClip: n => `Camera ${n}`,
+    cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 Delete camera', fadeIn: 'Fade in', fadeOut: 'Fade out',
+    videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
+    micPermission: 'Cannot open microphone. Check ZoomCut Microphone permission.',
+    promptCancel: 'Cancel', promptOk: 'OK', presetPlaceholder: '— Select preset —',
+    newConfirm: 'Start a new project? The current video, zoom points, and trims will be cleared.',
+    oneSegmentRequired: 'At least one segment must remain.',
+    exportRemuxing: 'Converting the file for smooth playback…',
+    exportSegment: (i, n, done, total, speed) => `Segment ${i}/${n} • ${done} / ${total} — ${speed}x`,
+    actionableSuffix: '\n\nIf you just granted macOS permissions, quit ZoomCut and open it again.',
+  },
+};
+function tr(key, ...args) {
+  const v = (I18N[state.lang] || I18N.th)[key];
+  return typeof v === 'function' ? v(...args) : v;
+}
+function stateSnapshot() {
+  return {
+    segments: state.segments.map(s => ({ ...s })),
+    selectedSeg: state.selectedSeg,
+    events: state.events.map(e => ({ ...e })),
+    selectedId: state.selectedId,
+    voiceovers: state.voiceovers.map(v => ({ ...v })),
+    selectedVoiceId: state.selectedVoiceId,
+    facecams: state.facecams.map(v => ({ ...v })),
+    selectedFaceId: state.selectedFaceId,
+    crop: { ...state.crop },
+  };
+}
+function restoreSnapshot(s) {
+  state.segments = s.segments.map(x => ({ ...x }));
+  state.selectedSeg = s.selectedSeg;
+  state.events = s.events.map(x => ({ ...x }));
+  state.selectedId = s.selectedId;
+  state.voiceovers = s.voiceovers.map(x => ({ ...x }));
+  state.selectedVoiceId = s.selectedVoiceId;
+  state.facecams = (s.facecams || []).map(x => ({ ...x }));
+  state.selectedFaceId = s.selectedFaceId || null;
+  state.crop = { ...s.crop };
+  syncCropUI();
+  updateSegUI();
+  updateTimelineUI();
+  updateVoiceUI();
+  updateCameraUI();
+  requestRender();
+}
+function commitHistory() {
+  if (!state.loaded) return;
+  history.undo.push(stateSnapshot());
+  if (history.undo.length > 80) history.undo.shift();
+  history.redo.length = 0;
+}
+function undoEdit() {
+  if (!history.undo.length) return;
+  history.redo.push(stateSnapshot());
+  restoreSnapshot(history.undo.pop());
+}
+function redoEdit() {
+  if (!history.redo.length) return;
+  history.undo.push(stateSnapshot());
+  restoreSnapshot(history.redo.pop());
+}
+function applyTheme() {
+  document.body.dataset.theme = state.theme;
+  $('themeBtn').textContent = state.theme === 'dark' ? '☀️' : '🌙';
+}
+function updateTimelineScale(anchorFrac = null) {
+  const vp = $('timelineViewport');
+  const before = anchorFrac === null ? null : vp.scrollWidth * anchorFrac - vp.scrollLeft;
+  $('timelineContent').style.width = (state.timelineZoom * 100) + '%';
+  if (before !== null) requestAnimationFrame(() => {
+    vp.scrollLeft = Math.max(0, vp.scrollWidth * anchorFrac - before);
+  });
+}
+function applyLanguage() {
+  $('langSel').value = state.lang;
+  $('appHint').textContent = tr('hint');
+  $('newBtn').textContent = tr('newJob');
+  $('diagBtn').textContent = tr('diagnostics');
+  if (!recState.recording) $('recBtn').textContent = tr('record');
+  $('openBtn').textContent = tr('open');
+  $('splitBtn').textContent = tr('split');
+  if (!voiceRec.active) $('voiceBtn').textContent = tr('voice');
+  $('camToggle').textContent = state.recordCamera ? tr('camOn') : tr('camOff');
+  $('camToggle').classList.toggle('active', state.recordCamera);
+  if (state.loaded) $('exportBtn').textContent = state.mode === 'video' ? tr('exportVideo') : tr('exportPng');
+  else $('exportBtn').textContent = tr('exportVideo');
+  if (video.paused) $('playBtn').textContent = tr('play');
+  if ($('shortcutOverlay').classList.contains('visible')) openShortcutHelp();
+  const textMap = [
+    ['.sidebar h3:nth-of-type(1)', 'preset'], ['.sidebar h3:nth-of-type(2)', 'aspect'],
+    ['#aspectRow [data-aspect="fit"]', 'fitFrame'], ['.sidebar h3:nth-of-type(3)', 'verticalPosition'],
+    ['#posRow [data-pos="top"]', 'top'], ['#posRow [data-pos="center"]', 'center'], ['#posRow [data-pos="bottom"]', 'bottom'],
+    ['.sidebar h3:nth-of-type(4)', 'deviceFrame'], ['#frameRow [data-frame="none"]', 'none'], ['#frameRow [data-frame="browser"]', 'browser'],
+    ['.sidebar h3:nth-of-type(5)', 'statusBar'], ['#sbRow [data-sb="none"]', 'off'], ['#sbRow [data-sb="auto"]', 'auto'],
+    ['#sbRow [data-sb="light"]', 'light'], ['#sbRow [data-sb="dark"]', 'dark'],
+    ['.sidebar h3:nth-of-type(6)', 'tapEffect'], ['#tapRow [data-tap="on"]', 'show'], ['#tapRow [data-tap="off"]', 'off'],
+    ['.sidebar h3:nth-of-type(7)', 'background'], ['#bgImageBtn', 'imageBg'], ['#bgTransBtn', 'transparent'],
+    ['.sidebar h3:nth-of-type(8)', 'videoFrame'], ['label[for="padding"]', 'padding'],
+    ['.sidebar h3:nth-of-type(9)', 'crop'], ['#cropReset', 'cropReset'], ['#cropToggle', 'cropGuide'],
+    ['.sidebar h3:nth-of-type(10)', 'zoomDefaults'], ['.sidebar h3:nth-of-type(11)', 'exportResolution'],
+    ['#voiceDelete', 'voiceDelete'], ['#segDelete', 'segDelete'], ['#markerEdit > span:first-child', 'zoomMarker'],
+    ['#mGrowL', 'growLeft'], ['#mGrowR', 'growRight'], ['#mDelete', 'delete'],
+    ['#pickerOverlay h2', 'pickerTitle'], ['#pickerOverlay .sub', 'pickerSub'], ['#pickerCancel', 'cancel'],
+    ['#diagOverlay h2', 'diagTitle'], ['#diagClose', 'close'], ['#exportOverlay h2', 'exportTitle'],
+  ];
+  for (const [sel, key] of textMap) {
+    const el = document.querySelector(sel);
+    if (el) el.textContent = tr(key);
+  }
+  const sliderLabels = [
+    ['padding', 'padding'], ['radius', 'radius'], ['shadow', 'shadow'], ['cropT', 'cropTop'],
+    ['cropB', 'cropBottom'], ['cropL', 'cropLeft'], ['cropR', 'cropRight'], ['defZoom', 'zoomLevel'],
+    ['defHold', 'hold'], ['mZoom', 'zoomLevel'], ['mIn', 'zoomIn'], ['mHold', 'hold'], ['mOut', 'zoomOut'],
+  ];
+  for (const [inputId, key] of sliderLabels) {
+    const label = document.querySelector(`label[for="${inputId}"]`)
+      || $(inputId)?.closest('.slider-row, span')?.querySelector('label');
+    if (label) label.textContent = tr(key) + ' ';
+  }
+  const cropTip = document.querySelector('.sidebar h3:nth-of-type(9) + .tip');
+  if (cropTip) cropTip.textContent = tr('cropTip');
+  const tips = document.querySelectorAll('.sidebar > .tip');
+  if (tips.length) tips[tips.length - 1].innerHTML = tr('helpTip');
+  $('dropHint').innerHTML = tr('dropHint');
+  $('presetSel').querySelector('option[value=""]').textContent = tr('presetPlaceholder');
+  $('exportSub').textContent = tr('exportSub');
+  $('shortcutBtn').title = tr('shortcuts');
+  $('themeBtn').title = state.theme === 'dark' ? (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'Switch to light mode') : (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดมืด' : 'Switch to dark mode');
+  $('snapBtn').title = state.lang === 'th' ? 'บันทึกเฟรมปัจจุบันเป็น PNG' : 'Save current frame as PNG';
+  $('voiceBtn').title = state.lang === 'th' ? 'อัดเสียงบรรยายเริ่มที่ playhead' : 'Record voiceover starting at the playhead';
+  $('micSel').title = state.lang === 'th' ? 'เลือกไมโครโฟน' : 'Choose microphone';
+  $('camSel').title = state.lang === 'th' ? 'เลือกกล้อง' : 'Choose camera';
+  $('cameraDelete').textContent = tr('cameraDelete');
+  $('videoLaneLabel').textContent = tr('videoLane');
+  $('voiceLaneLabel').textContent = tr('voiceLane');
+  $('cameraLaneLabel').textContent = tr('cameraLane');
+  const camPanel = document.querySelector('#cameraEdit > span:first-child');
+  if (camPanel) camPanel.textContent = tr('cameraOverlay');
+  const fadeLabels = [['camFadeIn', 'fadeIn'], ['camFadeOut', 'fadeOut']];
+  for (const [inputId, key] of fadeLabels) {
+    const label = $(inputId)?.closest('span')?.querySelector('label');
+    if (label) label.textContent = tr(key) + ' ';
+  }
+  $('urlText').placeholder = 'yourwebsite.com';
+  updateTimelineUI();
+  updateSegUI();
+  updateVoiceUI();
+  updateCameraUI();
+}
+
+const PHONE_COLORS = [
+  ['#2e2c2e', 'Space Black'], ['#bebdb9', 'Natural Titanium'],
+  ['#f5f4f2', 'White'], ['#c2a58a', 'Desert'], ['#394a5c', 'Blue'],
+];
+
+const BACKGROUNDS = [
+  ['#667eea', '#764ba2'], ['#f093fb', '#f5576c'], ['#4facfe', '#00f2fe'],
+  ['#43e97b', '#38f9d7'], ['#fa709a', '#fee140'], ['#30cfd0', '#330867'],
+  ['#0f0c29', '#302b63'], ['#232526', '#414345'],
+];
+
+// ---------- Background swatches ----------
+const bgGrid = $('bgGrid');
+BACKGROUNDS.forEach((g, i) => {
+  const d = document.createElement('div');
+  d.className = 'bg-swatch' + (i === state.bg ? ' active' : '');
+  d.style.background = `linear-gradient(135deg, ${g[0]}, ${g[1]})`;
+  d.onclick = () => {
+    state.bg = i;
+    state.bgType = 'preset';
+    syncBgActive();
+    requestRender();
+  };
+  bgGrid.appendChild(d);
+});
+
+function syncBgActive() {
+  bgGrid.querySelectorAll('.bg-swatch').forEach((el, j) =>
+    el.classList.toggle('active', state.bgType === 'preset' && j === state.bg));
+  $('bgImageBtn').classList.toggle('active', state.bgType === 'image');
+  $('bgTransBtn').classList.toggle('active', state.bgType === 'transparent');
+}
+
+$('cg1').addEventListener('input', () => { state.bgType = 'custom'; syncBgActive(); requestRender(); });
+$('cg2').addEventListener('input', () => { state.bgType = 'custom'; syncBgActive(); requestRender(); });
+$('bgTransBtn').onclick = () => { state.bgType = 'transparent'; syncBgActive(); requestRender(); };
+$('bgImageBtn').onclick = () => $('bgImageInput').click();
+$('bgImageInput').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => { state.bgImageEl = img; state.bgType = 'image'; syncBgActive(); requestRender(); };
+  img.src = URL.createObjectURL(f);
+};
+
+// ---------- ตัวช่วยผูก chip row ----------
+function bindChips(rowId, attr, cb) {
+  $(rowId).addEventListener('click', e => {
+    const c = e.target.closest('.chip');
+    if (!c || c.dataset[attr] === undefined) return;
+    $(rowId).querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c));
+    cb(c.dataset[attr]);
+    requestRender();
+  });
+}
+function setChipRow(rowId, attr, val) {
+  $(rowId).querySelectorAll('.chip').forEach(c =>
+    c.classList.toggle('active', c.dataset[attr] === String(val)));
+}
+
+bindChips('posRow', 'pos', v => state.posV = v);
+bindChips('sbRow', 'sb', v => state.statusBar = v);
+bindChips('tapRow', 'tap', v => state.showTaps = v === 'on');
+bindChips('scaleRow', 'scale', v => state.exportScale = parseInt(v));
+bindChips('zoomStyleRow', 'zoomStyle', v => {
+  state.zoomStyle = v;
+  const z = currentZoomStyle();
+  if (!z.tapOnly) {
+    state.defZoom = z.zoom;
+    state.defHold = z.hold;
+    $('defZoom').value = state.defZoom;
+    $('defZoomVal').textContent = state.defZoom.toFixed(1) + 'x';
+    $('defHold').value = state.defHold;
+    $('defHoldVal').textContent = state.defHold.toFixed(1) + 's';
+  }
+});
+bindChips('frameRow', 'frame', v => {
+  state.frame = v;
+  $('phoneColors').style.display = v === 'iphone' ? 'flex' : 'none';
+  $('urlText').style.display = v === 'browser' ? 'block' : 'none';
+  if (state.aspect === 'fit') setCanvasForAspect(); // เฟรมเปลี่ยนสัดส่วนกรอบรวม
+});
+
+const phoneColorsRow = $('phoneColors');
+PHONE_COLORS.forEach(([hex, name], i) => {
+  const d = document.createElement('div');
+  d.className = 'phone-swatch' + (i === 0 ? ' active' : '');
+  d.style.background = hex;
+  d.title = name;
+  d.onclick = () => {
+    state.frameColor = hex;
+    phoneColorsRow.querySelectorAll('.phone-swatch').forEach(x => x.classList.toggle('active', x === d));
+    requestRender();
+  };
+  phoneColorsRow.appendChild(d);
+});
+
+$('urlText').addEventListener('input', e => { state.urlText = e.target.value; requestRender(); });
+
+// ---------- Presets (localStorage) ----------
+const PRESET_KEY = 'zoomcut-presets';
+const PRESET_FIELDS = ['aspect', 'posV', 'bg', 'bgType', 'padding', 'radius', 'shadow',
+  'frame', 'frameColor', 'urlText', 'statusBar', 'showTaps', 'defZoom', 'defHold', 'exportScale'];
+
+function loadPresets() { try { return JSON.parse(localStorage.getItem(PRESET_KEY)) || {}; } catch { return {}; } }
+function refreshPresetList(selected) {
+  const sel = $('presetSel');
+  sel.innerHTML = `<option value="">${tr('presetPlaceholder')}</option>`;
+  for (const name of Object.keys(loadPresets())) {
+    const o = document.createElement('option');
+    o.value = o.textContent = name;
+    if (name === selected) o.selected = true;
+    sel.appendChild(o);
+  }
+}
+refreshPresetList();
+
+// prompt() ไม่รองรับใน Electron → ใช้ modal เอง
+function zcPrompt(message, defaultValue = '') {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:200';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px;width:360px';
+    box.innerHTML = `<div style="font-size:14px;margin-bottom:10px">${message}</div>
+      <input type="text" class="url-input" style="margin-top:0" />
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="btn small" data-act="cancel">${tr('promptCancel')}</button>
+        <button class="btn small primary" data-act="ok">${tr('promptOk')}</button></div>`;
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    const input = box.querySelector('input');
+    input.value = defaultValue;
+    input.focus(); input.select();
+    const close = (val) => { ov.remove(); resolve(val); };
+    box.querySelector('[data-act=ok]').onclick = () => close(input.value.trim() || null);
+    box.querySelector('[data-act=cancel]').onclick = () => close(null);
+    ov.addEventListener('click', e => { if (e.target === ov) close(null); });
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') close(input.value.trim() || null);
+      if (e.key === 'Escape') close(null);
+    });
+  });
+}
+
+$('presetSave').onclick = async () => {
+  const name = await zcPrompt(state.lang === 'th' ? 'ตั้งชื่อ preset:' : 'Preset name:', $('presetSel').value || 'My preset');
+  if (!name) return;
+  const all = loadPresets();
+  const s = {};
+  for (const k of PRESET_FIELDS) s[k] = state[k];
+  if (s.bgType === 'image') s.bgType = 'preset'; // รูปพื้นหลังบันทึกลง preset ไม่ได้
+  s.crop = { ...state.crop }; // เก็บค่าตัดขอบ (สำเนา ไม่ผูก reference)
+  s._cg1 = $('cg1').value; s._cg2 = $('cg2').value;
+  all[name] = s;
+  localStorage.setItem(PRESET_KEY, JSON.stringify(all));
+  refreshPresetList(name);
+};
+$('presetDel').onclick = () => {
+  const name = $('presetSel').value;
+  if (!name) return;
+  const all = loadPresets();
+  delete all[name];
+  localStorage.setItem(PRESET_KEY, JSON.stringify(all));
+  refreshPresetList();
+};
+$('presetSel').onchange = e => {
+  const s = loadPresets()[e.target.value];
+  if (s) applySettings(s);
+};
+
+function applySettings(s) {
+  for (const k of PRESET_FIELDS) if (s[k] !== undefined) state[k] = s[k];
+  if (s.crop) { state.crop = { t: s.crop.t || 0, r: s.crop.r || 0, b: s.crop.b || 0, l: s.crop.l || 0 }; syncCropUI(); }
+  if (s._cg1) $('cg1').value = s._cg1;
+  if (s._cg2) $('cg2').value = s._cg2;
+  // sync UI ทั้งหมด
+  setCanvasForAspect();
+  setChipRow('aspectRow', 'aspect', state.aspect);
+  setChipRow('posRow', 'pos', state.posV);
+  setChipRow('frameRow', 'frame', state.frame);
+  setChipRow('sbRow', 'sb', state.statusBar);
+  setChipRow('tapRow', 'tap', state.showTaps ? 'on' : 'off');
+  setChipRow('scaleRow', 'scale', state.exportScale);
+  $('phoneColors').style.display = state.frame === 'iphone' ? 'flex' : 'none';
+  $('urlText').style.display = state.frame === 'browser' ? 'block' : 'none';
+  $('urlText').value = state.urlText;
+  phoneColorsRow.querySelectorAll('.phone-swatch').forEach((x, i) =>
+    x.classList.toggle('active', PHONE_COLORS[i][0] === state.frameColor));
+  for (const [id, key, fmt] of [['padding', 'padding', v => v + '%'], ['radius', 'radius', v => v + '%'],
+    ['shadow', 'shadow', v => v], ['defZoom', 'defZoom', v => v.toFixed(1) + 'x'], ['defHold', 'defHold', v => v.toFixed(1) + 's']]) {
+    $(id).value = state[key];
+    $(id + 'Val').textContent = fmt(state[key]);
+  }
+  syncBgActive();
+  requestRender();
+}
+
+// ---------- Controls ----------
+// ปรับขนาด canvas ตามสัดส่วน — โหมด "fit" คำนวณให้เนื้อหา (วิดีโอหลัง crop + เฟรม) เต็มพอดี
+function setCanvasForAspect() {
+  if (state.aspect !== 'fit') {
+    const [w, h] = ASPECTS[state.aspect];
+    canvas.width = w; canvas.height = h;
+    return;
+  }
+  const m = media();
+  const va = m ? m.w / m.h : 9 / 16;
+  const bf = state.frame === 'iphone' ? 0.035 : 0;
+  const tf = state.frame === 'browser' ? 0.075 : 0;
+  const outerAspect = (1 + 2 * bf) / (1 / va + 2 * bf + tf); // กว้าง/สูง ของกรอบรวม
+  const MAX = 1920;
+  let W, H;
+  if (outerAspect >= 1) { W = MAX; H = Math.round(MAX / outerAspect); }
+  else { H = MAX; W = Math.round(MAX * outerAspect); }
+  canvas.width = Math.max(2, W - (W % 2));
+  canvas.height = Math.max(2, H - (H % 2));
+}
+$('aspectRow').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  state.aspect = chip.dataset.aspect;
+  document.querySelectorAll('#aspectRow .chip').forEach(c => c.classList.toggle('active', c === chip));
+  setCanvasForAspect();
+  requestRender();
+});
+
+function bindSlider(id, key, valId, fmt) {
+  $(id).addEventListener('input', e => {
+    state[key] = parseFloat(e.target.value);
+    $(valId).textContent = fmt(state[key]);
+    requestRender();
+  });
+}
+bindSlider('padding', 'padding', 'paddingVal', v => v + '%');
+bindSlider('radius', 'radius', 'radiusVal', v => v + '%');
+bindSlider('shadow', 'shadow', 'shadowVal', v => v);
+bindSlider('defZoom', 'defZoom', 'defZoomVal', v => v.toFixed(1) + 'x');
+bindSlider('defHold', 'defHold', 'defHoldVal', v => v.toFixed(1) + 's');
+
+// ---------- Crop (ตัดขอบ) ----------
+let showCropGuide = false;
+function bindCrop(id, edge, valId) {
+  $(id).addEventListener('input', e => {
+    state.crop[edge] = parseFloat(e.target.value) / 100;
+    $(valId).textContent = e.target.value + '%';
+    if (state.aspect === 'fit') setCanvasForAspect(); // crop เปลี่ยนสัดส่วน → ปรับ canvas
+    requestRender();
+  });
+}
+bindCrop('cropT', 't', 'cropTVal');
+bindCrop('cropB', 'b', 'cropBVal');
+bindCrop('cropL', 'l', 'cropLVal');
+bindCrop('cropR', 'r', 'cropRVal');
+function syncCropUI() {
+  for (const [id, edge, valId] of [['cropT','t','cropTVal'],['cropB','b','cropBVal'],['cropL','l','cropLVal'],['cropR','r','cropRVal']]) {
+    $(id).value = state.crop[edge] * 100;
+    $(valId).textContent = (state.crop[edge] * 100).toFixed(1).replace(/\.0$/,'') + '%';
+  }
+}
+$('cropReset').onclick = () => { state.crop = { t: 0, r: 0, b: 0, l: 0 }; syncCropUI(); if (state.aspect === 'fit') setCanvasForAspect(); requestRender(); };
+$('cropToggle').onclick = () => {
+  showCropGuide = !showCropGuide;
+  $('cropToggle').classList.toggle('active', showCropGuide);
+  requestRender();
+};
+$('debugToggle').onclick = () => {
+  state.debugOverlay = !state.debugOverlay;
+  $('debugToggle').classList.toggle('active', state.debugOverlay);
+  requestRender();
+};
+
+// ---------- File loading ----------
+$('openBtn').onclick = () => $('fileInput').click();
+$('fileInput').onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  if (f.type.startsWith('image/')) loadImage(f);
+  else loadFile(f);
+};
+
+const stage = $('stage');
+stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('dragover'); });
+stage.addEventListener('dragleave', () => stage.classList.remove('dragover'));
+stage.addEventListener('drop', e => {
+  e.preventDefault();
+  stage.classList.remove('dragover');
+  const files = [...e.dataTransfer.files];
+  const vid = files.find(f => f.type.startsWith('video/'));
+  const img = files.find(f => f.type.startsWith('image/'));
+  const json = files.find(f => f.name.endsWith('.json'));
+  if (vid) loadFile(vid, json);
+  else if (img) loadImage(img);
+  else if (json && state.loaded) importClicks(json);
+});
+
+// สร้างจุดซูมอัตโนมัติจาก clicks.json ที่ได้จาก record.py
+async function importClicks(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { alert(state.lang === 'th' ? 'อ่านไฟล์ clicks.json ไม่ได้' : 'Cannot read clicks.json'); return; }
+  const clicks = data.clicks || [];
+  state.taps = clicks.map(c => ({ t: c.t, x: c.x, y: c.y })); // ทุกคลิกกลายเป็น ripple
+  state.events = [];
+  for (const c of clicks) {
+    const z = currentZoomStyle();
+    if (z.tapOnly) continue;
+    const last = state.events[state.events.length - 1];
+    const dist = last ? Math.hypot(c.x - last.x, c.y - last.y) : 1;
+    if (last && c.t < last.start + last.tIn + last.hold + z.mergeWindow && dist < z.mergeDist) {
+      // คลิกซ้ำใกล้ๆ จุดเดิม → ยืดช่วงค้างของซูมเดิมแทนการซูมใหม่
+      last.hold = Math.max(last.hold, c.t - last.start - last.tIn + z.hold);
+    } else {
+      state.events.push({
+        id: nextId++,
+        start: Math.max(0, c.t - 0.35),
+        x: c.x, y: c.y,
+        zoom: state.defZoom,
+        tIn: z.tIn, hold: state.defHold, tOut: z.tOut,
+      });
+    }
+  }
+  state.selectedId = null;
+  updateTimelineUI();
+  requestRender();
+  if (clicks.length) $('zoomCount').textContent = state.lang === 'th'
+    ? `🔍 ${state.events.length} จุดซูม (จาก ${clicks.length} คลิก)`
+    : `🔍 ${state.events.length} zooms (${clicks.length} clicks)`;
+}
+
+function enterLoadedUI() {
+  canvas.style.display = '';
+  $('dropHint').style.display = 'none';
+  $('exportBtn').disabled = false;
+  $('snapBtn').disabled = false;
+  const isVideo = state.mode === 'video';
+  $('playBtn').disabled = !isVideo;
+  $('splitBtn').disabled = !isVideo;
+  $('voiceBtn').disabled = !isVideo;
+  $('exportBtn').textContent = isVideo ? tr('exportVideo') : tr('exportPng');
+  $('imgExportSec').style.display = isVideo ? 'none' : '';
+  document.querySelector('.timeline-area').style.display = isVideo ? '' : 'none';
+  updateTimelineScale();
+}
+
+function loadImage(file) {
+  const img = new Image();
+  img.onload = () => {
+    state.mode = 'image';
+    state.imageEl = img;
+    state.loaded = true;
+    state.events = [];
+    state.taps = [];
+    state.voiceovers = [];
+    state.selectedVoiceId = null;
+    state.facecams = [];
+    state.selectedFaceId = null;
+    state.selectedId = null;
+    state.crop = { t: 0, r: 0, b: 0, l: 0 };
+    syncCropUI();
+    video.pause();
+    enterLoadedUI();
+    const portrait = img.naturalHeight > img.naturalWidth;
+    document.querySelector(`#aspectRow .chip[data-aspect="${portrait ? '4:5' : '16:9'}"]`).click();
+    requestRender();
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function loadFile(file, clicksFile) {
+  video.src = URL.createObjectURL(file);
+  video.onloadedmetadata = () => {
+    state.mode = 'video';
+    state.loaded = true;
+    state.events = [];
+    state.taps = [];
+    state.voiceovers = [];
+    state.selectedVoiceId = null;
+    state.facecams = [];
+    state.selectedFaceId = null;
+    state.selectedId = null;
+    state.crop = { t: 0, r: 0, b: 0, l: 0 };
+    syncCropUI();
+    initSegments();
+    video.playbackRate = 1;
+    enterLoadedUI();
+    // auto-pick aspect matching the source orientation
+    const portrait = video.videoHeight > video.videoWidth;
+    const target = portrait ? '9:16' : '16:9';
+    document.querySelector(`#aspectRow .chip[data-aspect="${target}"]`).click();
+    video.currentTime = 0;
+    updateTimelineUI();
+    requestRender();
+    if (clicksFile) importClicks(clicksFile);
+  };
+}
+
+// ---------- Camera math ----------
+// ID_CAM = กล้องพัก: ซูม 1 เท่า อยู่กึ่งกลางพื้นที่ crop (คำนวณสดเพราะขึ้นกับ crop)
+function idCam() {
+  const cr = cropRect();
+  return { zoom: 1, cx: cr.x + cr.w / 2, cy: cr.y + cr.h / 2 };
+}
+const easeInOut = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
+const lerp = (a, b, t) => a + (b - a) * t;
+function lerpCam(a, b, t) {
+  // interpolate zoom in log space for smoother feel
+  return {
+    zoom: Math.exp(lerp(Math.log(a.zoom), Math.log(b.zoom), t)),
+    cx: lerp(a.cx, b.cx, t),
+    cy: lerp(a.cy, b.cy, t),
+  };
+}
+
+function cameraAt(t) {
+  const rest = idCam();
+  const events = state.events;
+  let evalFn = () => rest;
+  for (const e of events) {
+    if (e.start > t) break;
+    const prev = evalFn;
+    const startCam = prev(e.start);
+    const target = { zoom: e.zoom, cx: e.x, cy: e.y };
+    evalFn = (tt) => {
+      const dt = tt - e.start;
+      if (dt < 0) return prev(tt);
+      if (dt < e.tIn) return lerpCam(startCam, target, easeInOut(dt / e.tIn));
+      if (dt < e.tIn + e.hold) return target;
+      if (dt < e.tIn + e.hold + e.tOut) return lerpCam(target, rest, easeInOut((dt - e.tIn - e.hold) / e.tOut));
+      return rest;
+    };
+  }
+  return evalFn(t);
+  // หมายเหตุ: การ clamp ให้อยู่ในพื้นที่ crop ทำที่ sourceRect() แทน
+}
+
+// ---------- Rendering ----------
+let renderQueued = false;
+function requestRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; drawFrame(); });
+}
+
+function roundRectPath(c, x, y, w, h, r) {
+  r = Math.min(r, w/2, h/2);
+  c.beginPath();
+  c.moveTo(x+r, y);
+  c.arcTo(x+w, y, x+w, y+h, r);
+  c.arcTo(x+w, y+h, x, y+h, r);
+  c.arcTo(x, y+h, x, y, r);
+  c.arcTo(x, y, x+w, y, r);
+  c.closePath();
+}
+
+// rawMedia = ต้นฉบับเต็ม (พิกเซลจริง), media = หลังตัดขอบ (ใช้คำนวณสัดส่วน/layout)
+function rawMedia() {
+  if (state.mode === 'image')
+    return state.imageEl ? { el: state.imageEl, w: state.imageEl.naturalWidth, h: state.imageEl.naturalHeight } : null;
+  return state.loaded && video.videoWidth ? { el: video, w: video.videoWidth, h: video.videoHeight } : null;
+}
+function cropRect() {
+  const c = state.crop;
+  return { x: c.l, y: c.t, w: Math.max(0.05, 1 - c.l - c.r), h: Math.max(0.05, 1 - c.t - c.b) };
+}
+function cropPx() {
+  const m = rawMedia(), cr = cropRect();
+  return { x: cr.x * m.w, y: cr.y * m.h, w: cr.w * m.w, h: cr.h * m.h };
+}
+function media() {
+  const m = rawMedia();
+  if (!m) return null;
+  const cp = cropPx();
+  return { el: m.el, w: cp.w, h: cp.h }; // ขนาดหลังตัดขอบ → สัดส่วนถูกต้อง
+}
+// พื้นที่ต้นฉบับ (พิกเซลจริง) ที่จะนำมาวาด ตาม camera + crop (clamp ให้อยู่ในพื้นที่ crop)
+function sourceRect(cam) {
+  const m = rawMedia(), cp = cropPx();
+  const sw = cp.w / cam.zoom, sh = cp.h / cam.zoom;
+  let sx = cam.cx * m.w - sw / 2, sy = cam.cy * m.h - sh / 2;
+  sx = Math.min(cp.x + cp.w - sw, Math.max(cp.x, sx));
+  sy = Math.min(cp.y + cp.h - sh, Math.max(cp.y, sy));
+  return { sx, sy, sw, sh };
+}
+
+// คำนวณตำแหน่ง: outer = ขอบเขตรวมกรอบอุปกรณ์, content = พื้นที่วิดีโอจริง
+function layout() {
+  const W = canvas.width, H = canvas.height;
+  const minDim = Math.min(W, H);
+  // โหมด "พอดีเฟรม": ไม่มีขอบพื้นหลัง (padding = 0)
+  const pad = state.aspect === 'fit' ? 0 : state.padding / 100 * minDim;
+  const availW = W - pad * 2, availH = H - pad * 2;
+  const m = media();
+  const va = m ? m.w / m.h : 9 / 16;
+
+  const bf = state.frame === 'iphone' ? 0.035 : 0;   // ความหนา bezel เทียบความกว้าง content
+  const tf = state.frame === 'browser' ? 0.075 : 0;  // ความสูงแถบเบราว์เซอร์
+
+  // หา content width ใหญ่สุดที่ outer ยังอยู่ในพื้นที่
+  let cw = Math.min(availW / (1 + 2 * bf), availH / (1 / va + 2 * bf + tf));
+  const ch = cw / va;
+  const bezel = bf * cw, topBar = tf * cw;
+  const outerW = cw + bezel * 2, outerH = ch + bezel * 2 + topBar;
+
+  const x = (W - outerW) / 2;
+  let y;
+  if (state.posV === 'top') y = pad;
+  else if (state.posV === 'bottom') y = H - pad - outerH;
+  else y = (H - outerH) / 2;
+
+  let rOuter, rContent;
+  if (state.frame === 'iphone') {
+    rContent = cw * 0.1;            // มุมจอ iPhone โค้งมาก
+    rOuter = rContent + bezel;
+  } else {
+    rOuter = rContent = state.radius / 100 * minDim;
+  }
+  return {
+    outer: { x, y, w: outerW, h: outerH, r: rOuter },
+    content: { x: x + bezel, y: y + bezel + topBar, w: cw, h: ch, r: rContent },
+    bezel, topBar,
+  };
+}
+
+// ---------- พื้นหลัง ----------
+let checkerPattern = null;
+function drawBackground(forExport) {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  if (state.bgType === 'transparent') {
+    if (!forExport) {
+      if (!checkerPattern) {
+        const p = document.createElement('canvas');
+        p.width = p.height = 32;
+        const pc = p.getContext('2d');
+        pc.fillStyle = '#23262f'; pc.fillRect(0, 0, 32, 32);
+        pc.fillStyle = '#2d313c'; pc.fillRect(0, 0, 16, 16); pc.fillRect(16, 16, 16, 16);
+        checkerPattern = ctx.createPattern(p, 'repeat');
+      }
+      ctx.fillStyle = checkerPattern;
+      ctx.fillRect(0, 0, W, H);
+    }
+    return;
+  }
+  if (state.bgType === 'image' && state.bgImageEl) {
+    const img = state.bgImageEl;
+    const s = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+    ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    return;
+  }
+  const [c1, c2] = state.bgType === 'custom' ? [$('cg1').value, $('cg2').value] : BACKGROUNDS[state.bg];
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, c1);
+  grad.addColorStop(1, c2);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// ---------- Status bar ปลอมแบบ Screeny ----------
+const sbSample = { t: 0, color: '#ffffff' };
+function drawStatusBar(L) {
+  const c = L.content;
+  const portrait = c.h > c.w;
+  const h = c.h * (portrait ? 0.064 : 0.05); // สัดส่วน status bar จริงของ iPhone (~54/844)
+
+  let bg, fg;
+  if (state.statusBar === 'light') { bg = '#ffffff'; fg = '#000000'; }
+  else if (state.statusBar === 'dark') { bg = '#000000'; fg = '#ffffff'; }
+  else { // auto: ดูดสีจากวิดีโอใต้แถบ
+    if (performance.now() - sbSample.t > 400) {
+      try {
+        const d = ctx.getImageData(c.x + c.w / 2 - 20, c.y + h + 3, 40, 4).data;
+        let r = 0, g = 0, b = 0, n = d.length / 4;
+        for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+        sbSample.color = `rgb(${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)})`;
+        sbSample.t = performance.now();
+      } catch {}
+    }
+    bg = sbSample.color;
+    const m = bg.match(/\d+/g) || [255, 255, 255];
+    const lum = 0.299 * m[0] + 0.587 * m[1] + 0.114 * m[2];
+    fg = lum > 140 ? '#000000' : '#ffffff';
+  }
+
+  ctx.save();
+  roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
+  ctx.clip();
+  ctx.fillStyle = bg;
+  ctx.fillRect(c.x, c.y, c.w, h);
+
+  ctx.fillStyle = fg;
+  const fs = h * 0.42;
+  ctx.font = `600 ${fs}px -apple-system, "SF Pro Text", sans-serif`;
+  ctx.textBaseline = 'middle';
+  const cy = c.y + h / 2;
+  // เวลา 9:41 ฝั่งซ้าย
+  ctx.textAlign = 'center';
+  ctx.fillText('9:41', c.x + c.w * 0.17, cy);
+  // ฝั่งขวา: สัญญาณ + wifi + แบตเตอรี่
+  const rx = c.x + c.w * 0.83;
+  const u = fs; // หน่วยไอคอน
+  // สัญญาณ 4 ขีด
+  for (let i = 0; i < 4; i++) {
+    const bh = u * (0.35 + i * 0.18);
+    ctx.fillRect(rx - u * 2.6 + i * u * 0.28, cy + u * 0.45 - bh, u * 0.18, bh);
+  }
+  // wifi (สามส่วนโค้ง)
+  ctx.strokeStyle = fg;
+  ctx.lineWidth = u * 0.14;
+  ctx.lineCap = 'round';
+  for (let i = 1; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.arc(rx - u * 0.9, cy + u * 0.35, u * 0.25 * i, Math.PI * 1.28, Math.PI * 1.72);
+    ctx.stroke();
+  }
+  // แบตเตอรี่เต็ม
+  const bw = u * 1.1, bh2 = u * 0.55, bx = rx + u * 0.1, by = cy - bh2 / 2;
+  ctx.globalAlpha = 0.45;
+  roundRectPath(ctx, bx, by, bw, bh2, bh2 * 0.25);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  roundRectPath(ctx, bx + u * 0.1, by + u * 0.1, bw - u * 0.2, bh2 - u * 0.2, bh2 * 0.15);
+  ctx.fill();
+  ctx.fillRect(bx + bw + u * 0.05, cy - u * 0.1, u * 0.08, u * 0.2);
+  ctx.restore();
+  ctx.textAlign = 'left';
+}
+
+// ---------- แถบเบราว์เซอร์ปลอม ----------
+function drawBrowserChrome(L) {
+  const { outer, topBar } = L;
+  const cy = outer.y + topBar / 2;
+  const u = topBar;
+  // ปุ่มจราจร
+  const dots = ['#ff5f57', '#febc2e', '#28c840'];
+  dots.forEach((col, i) => {
+    ctx.beginPath();
+    ctx.arc(outer.x + u * 0.45 + i * u * 0.42, cy, u * 0.13, 0, Math.PI * 2);
+    ctx.fillStyle = col;
+    ctx.fill();
+  });
+  // ช่อง URL
+  const pw = outer.w * 0.52, px = outer.x + (outer.w - pw) / 2;
+  roundRectPath(ctx, px, cy - u * 0.26, pw, u * 0.52, u * 0.26);
+  ctx.fillStyle = 'rgba(255,255,255,.09)';
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.55)';
+  ctx.font = `${u * 0.3}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🔒 ' + (state.urlText || 'yourwebsite.com'), px + pw / 2, cy + u * 0.02);
+  ctx.textAlign = 'left';
+}
+
+// ---------- Ripple จุดแตะ ----------
+const easeOutQuad = t => 1 - (1 - t) * (1 - t);
+function drawTaps(L, cam) {
+  if (!state.showTaps || state.mode !== 'video' || !state.taps.length) return;
+  const ct = video.currentTime;
+  const c = L.content;
+  const sr = sourceRect(cam);
+  const m = rawMedia();
+  for (const tp of state.taps) {
+    const dt = ct - tp.t;
+    if (dt < 0 || dt > 0.55) continue;
+    const p = easeOutQuad(dt / 0.55);
+    // พิกัด tap เป็น normalized ของวิดีโอเต็ม → พิกเซลต้นฉบับ → พิกัดบน content
+    const px = c.x + (tp.x * m.w - sr.sx) / sr.sw * c.w;
+    const py = c.y + (tp.y * m.h - sr.sy) / sr.sh * c.h;
+    if (px < c.x || px > c.x + c.w || py < c.y || py > c.y + c.h) continue;
+    const rad = (0.018 + 0.05 * p) * c.w * Math.sqrt(cam.zoom);
+    ctx.save();
+    roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.arc(px, py, rad, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${0.28 * (1 - p)})`;
+    ctx.fill();
+    ctx.lineWidth = c.w * 0.004;
+    ctx.strokeStyle = `rgba(255,255,255,${0.75 * (1 - p)})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawDebugOverlay(L, cam) {
+  if (!state.debugOverlay || !rawMedia()) return;
+  const c = L.content;
+  const m = rawMedia();
+  const sr = sourceRect(cam);
+  const cr = cropRect();
+  ctx.save();
+  roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
+  ctx.clip();
+  ctx.lineWidth = Math.max(2, c.w * 0.004);
+  ctx.strokeStyle = 'rgba(67,233,123,.95)';
+  ctx.strokeRect(c.x + (cr.x * m.w - sr.sx) / sr.sw * c.w, c.y + (cr.y * m.h - sr.sy) / sr.sh * c.h,
+    cr.w * m.w / sr.sw * c.w, cr.h * m.h / sr.sh * c.h);
+  const cx = c.x + (cam.cx * m.w - sr.sx) / sr.sw * c.w;
+  const cy = c.y + (cam.cy * m.h - sr.sy) / sr.sh * c.h;
+  ctx.strokeStyle = 'rgba(255,255,255,.9)';
+  ctx.beginPath(); ctx.moveTo(cx - 14, cy); ctx.lineTo(cx + 14, cy); ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy + 14); ctx.stroke();
+  ctx.fillStyle = 'rgba(108,124,255,.9)';
+  for (const tp of state.taps) {
+    const px = c.x + (tp.x * m.w - sr.sx) / sr.sw * c.w;
+    const py = c.y + (tp.y * m.h - sr.sy) / sr.sh * c.h;
+    if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) {
+      ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+  const lines = [
+    `cam ${cam.zoom.toFixed(2)}x @ ${cam.cx.toFixed(3)}, ${cam.cy.toFixed(3)}`,
+    `source ${Math.round(sr.sx)},${Math.round(sr.sy)} ${Math.round(sr.sw)}x${Math.round(sr.sh)}`,
+    `crop ${cr.x.toFixed(2)},${cr.y.toFixed(2)} ${cr.w.toFixed(2)}x${cr.h.toFixed(2)}`,
+  ];
+  ctx.save();
+  ctx.font = `${Math.max(18, canvas.width * 0.014)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+  ctx.textBaseline = 'top';
+  const pad = 12, lh = Math.max(24, canvas.width * 0.019);
+  const w = Math.max(...lines.map(s => ctx.measureText(s).width)) + pad * 2;
+  ctx.fillStyle = 'rgba(10,12,18,.78)';
+  roundRectPath(ctx, c.x + 12, c.y + 12, w, lines.length * lh + pad, 8);
+  ctx.fill();
+  ctx.fillStyle = '#e8eaf0';
+  lines.forEach((s, i) => ctx.fillText(s, c.x + 12 + pad, c.y + 12 + pad / 2 + i * lh));
+  ctx.restore();
+}
+
+function drawFacecamOverlay(L) {
+  if (!state.facecams.length || state.mode !== 'video') return;
+  const outT = sourceToOutputTime(video.currentTime);
+  const active = state.facecams.find(c => outT >= clipOutStart(c) && outT <= clipOutStart(c) + clipOutDuration(c));
+  if (!active) return;
+  const vid = active.video || document.createElement('video');
+  if (!active.video) {
+    vid.src = active.url; vid.muted = true; vid.playsInline = true;
+    active.video = vid;
+  }
+  const off = Math.max(0, outT - clipOutStart(active)) + clipMediaOffset(active);
+  if (vid.readyState >= 1 && Math.abs((vid.currentTime || 0) - off) > 0.12) {
+    try { vid.currentTime = off; } catch {}
+  }
+  if (!video.paused && vid.paused) vid.play().catch(() => {});
+  if (video.paused && !vid.paused) vid.pause();
+  if (vid.readyState < 2) return;
+  const c = L.content;
+  const size = Math.min(c.w, c.h) * ((active.size ?? state.camDefaults.size) / 100);
+  const margin = c.w * ((active.margin ?? state.camDefaults.margin) / 100);
+  const pos = active.pos || state.camDefaults.pos;
+  let x = c.x + c.w - size - margin;
+  let y = c.y + c.h - size - margin;
+  if (pos.includes('left')) x = c.x + margin;
+  if (pos.includes('center')) x = c.x + (c.w - size) / 2;
+  if (pos.includes('top')) y = c.y + margin;
+  const t = outT - clipOutStart(active);
+  const remain = clipOutStart(active) + clipOutDuration(active) - outT;
+  const fadeIn = active.fadeIn || 0, fadeOut = active.fadeOut || 0;
+  const alphaIn = fadeIn > 0 ? Math.min(1, t / fadeIn) : 1;
+  const alphaOut = fadeOut > 0 ? Math.min(1, remain / fadeOut) : 1;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alphaIn, alphaOut));
+  if ((active.shape || state.camDefaults.shape) === 'circle') {
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+  } else {
+    roundRectPath(ctx, x, y, size, size, size * 0.16);
+  }
+  ctx.clip();
+  const va = vid.videoWidth / vid.videoHeight || 1;
+  let sw = vid.videoWidth, sh = vid.videoHeight, sx = 0, sy = 0;
+  if (va > 1) { sw = vid.videoHeight; sx = (vid.videoWidth - sw) / 2; }
+  else { sh = vid.videoWidth; sy = (vid.videoHeight - sh) / 2; }
+  ctx.drawImage(vid, sx, sy, sw, sh, x, y, size, size);
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alphaIn, alphaOut));
+  ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.lineWidth = Math.max(2, size * 0.025);
+  if ((active.shape || state.camDefaults.shape) === 'circle') {
+    ctx.beginPath();
+    ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+  } else {
+    roundRectPath(ctx, x, y, size, size, size * 0.16);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// วาดตัวช่วยตั้ง crop: หน้าต่างเต็ม + กรอบเขียว = ส่วนที่เก็บไว้ (พื้นที่มืด = ถูกตัด)
+function drawCropGuide() {
+  const W = canvas.width, H = canvas.height;
+  const rm = rawMedia();
+  const pad = 0.05 * Math.min(W, H);
+  const availW = W - pad * 2, availH = H - pad * 2;
+  const va = rm.w / rm.h;
+  let cw = availW, ch = cw / va;
+  if (ch > availH) { ch = availH; cw = ch * va; }
+  const bx = (W - cw) / 2, by = (H - ch) / 2;
+  ctx.drawImage(rm.el, 0, 0, rm.w, rm.h, bx, by, cw, ch);
+  // พื้นที่ที่จะเก็บ
+  const cr = cropRect();
+  const kx = bx + cr.x * cw, ky = by + cr.y * ch, kw = cr.w * cw, kh = cr.h * ch;
+  // ทับส่วนที่ถูกตัดด้วยสีมืด
+  ctx.fillStyle = 'rgba(0,0,0,.55)';
+  ctx.fillRect(bx, by, cw, ky - by);                 // บน
+  ctx.fillRect(bx, ky + kh, cw, by + ch - (ky + kh)); // ล่าง
+  ctx.fillRect(bx, ky, kx - bx, kh);                  // ซ้าย
+  ctx.fillRect(kx + kw, ky, bx + cw - (kx + kw), kh); // ขวา
+  // กรอบเขียว
+  ctx.strokeStyle = '#43e97b';
+  ctx.lineWidth = Math.max(2, 0.004 * Math.min(W, H));
+  ctx.setLineDash([12, 8]);
+  ctx.strokeRect(kx, ky, kw, kh);
+  ctx.setLineDash([]);
+}
+
+function drawFrame(forExport = false) {
+  forExport = forExport || state.exporting;
+  drawBackground(forExport);
+
+  const m = media();
+  if (!m) return;
+
+  // โหมด "ดูขอบ": แสดงทั้งหน้าต่าง (ยังไม่ตัด) + กรอบเขียวบอกส่วนที่จะเก็บไว้
+  if (showCropGuide && !forExport && rawMedia()) {
+    drawCropGuide();
+    return;
+  }
+
+  const L = layout();
+  const { outer, content } = L;
+  const minDim = Math.min(canvas.width, canvas.height);
+
+  // เงา
+  if (state.shadow > 0) {
+    ctx.save();
+    ctx.shadowColor = `rgba(0,0,0,${state.shadow / 100 * 0.6})`;
+    ctx.shadowBlur = state.shadow / 100 * minDim * 0.08;
+    ctx.shadowOffsetY = state.shadow / 100 * minDim * 0.02;
+    roundRectPath(ctx, outer.x, outer.y, outer.w, outer.h, outer.r);
+    ctx.fillStyle = '#000';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ตัวกรอบอุปกรณ์
+  if (state.frame === 'iphone') {
+    roundRectPath(ctx, outer.x, outer.y, outer.w, outer.h, outer.r);
+    ctx.fillStyle = state.frameColor;
+    ctx.fill();
+    // ไฮไลต์ขอบโลหะ
+    ctx.save();
+    roundRectPath(ctx, outer.x, outer.y, outer.w, outer.h, outer.r);
+    ctx.lineWidth = Math.max(2, L.bezel * 0.12);
+    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.stroke();
+    ctx.restore();
+  } else if (state.frame === 'browser') {
+    roundRectPath(ctx, outer.x, outer.y, outer.w, outer.h, outer.r);
+    ctx.fillStyle = '#2b2b30';
+    ctx.fill();
+  }
+
+  // วิดีโอ/รูป พร้อม camera zoom + ตัดขอบ (crop)
+  const cam = state.mode === 'video' ? cameraAt(video.currentTime) : idCam();
+  const sr = sourceRect(cam);
+
+  ctx.save();
+  if (state.frame === 'browser') {
+    // มุมล่างโค้งตาม outer มุมบนเป็นเหลี่ยม (โดนแถบทับ)
+    roundRectPath(ctx, outer.x, outer.y, outer.w, outer.h, outer.r);
+  } else {
+    roundRectPath(ctx, content.x, content.y, content.w, content.h, content.r);
+  }
+  ctx.clip();
+  ctx.drawImage(m.el, sr.sx, sr.sy, sr.sw, sr.sh, content.x, content.y, content.w, content.h);
+  ctx.restore();
+
+  if (state.statusBar !== 'none') drawStatusBar(L);
+  if (state.frame === 'browser') drawBrowserChrome(L);
+  drawTaps(L, cam);
+  drawFacecamOverlay(L);
+  drawDebugOverlay(L, cam);
+}
+
+// continuous render while playing
+function loop() {
+  if (state.loaded && state.mode === 'video' && !video.paused && !state.exporting) segPlaybackTick();
+  if (state.loaded && (!video.paused || state.exporting)) drawFrame();
+  if (state.loaded && !video.paused && !state.exporting) { updatePlayheadUI(); syncVoicePreview(); }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// ---------- Click on canvas → add zoom ----------
+canvas.addEventListener('click', e => {
+  if (!state.loaded || state.exporting || state.mode !== 'video') return;
+  const bounds = canvas.getBoundingClientRect();
+  const px = (e.clientX - bounds.left) / bounds.width * canvas.width;
+  const py = (e.clientY - bounds.top) / bounds.height * canvas.height;
+  const rect = layout().content;
+  if (px < rect.x || px > rect.x + rect.w || py < rect.y || py > rect.y + rect.h) return;
+
+  // คลิกในพื้นที่ที่เห็น → แปลงกลับเป็นพิกัดวิดีโอเต็ม (normalized) ผ่าน source rect
+  const cam = cameraAt(video.currentTime);
+  const sr = sourceRect(cam);
+  const m = rawMedia();
+  const relX = (px - rect.x) / rect.w, relY = (py - rect.y) / rect.h;
+  const vx = (sr.sx + relX * sr.sw) / m.w;
+  const vy = (sr.sy + relY * sr.sh) / m.h;
+
+  const ev = {
+    id: nextId++,
+    start: Math.max(0, video.currentTime - 0.35), // start zooming slightly before the tap
+    x: vx, y: vy,
+    zoom: state.defZoom,
+    tIn: currentZoomStyle().tIn, hold: state.defHold, tOut: currentZoomStyle().tOut,
+  };
+  if (currentZoomStyle().tapOnly) return;
+  commitHistory();
+  state.events.push(ev);
+  state.events.sort((a, b) => a.start - b.start);
+  state.selectedId = ev.id;
+  updateTimelineUI();
+  requestRender();
+});
+
+// ---------- Playback ----------
+const playBtn = $('playBtn');
+playBtn.onclick = () => {
+  if (video.paused) {
+    const last = state.segments[state.segments.length - 1];
+    // ถ้าเล่นจบท้ายสุดแล้ว → เริ่มใหม่จากต้น
+    if (last && video.currentTime >= last.end - 0.05) video.currentTime = state.segments[0].start;
+    startSegPlayback();
+    video.play();
+  } else video.pause();
+};
+video.addEventListener('play', () => {
+  playBtn.textContent = tr('pause');
+  // ปิดโหมด "ดูขอบ" อัตโนมัติเมื่อเริ่มเล่น (ไม่งั้นจะเห็นภาพ guide นิ่ง เหมือนซูมไม่ทำงาน)
+  if (showCropGuide) { showCropGuide = false; $('cropToggle').classList.remove('active'); }
+});
+video.addEventListener('pause', () => { playBtn.textContent = tr('play'); stopVoicePreview(); });
+video.addEventListener('seeked', () => { requestRender(); updatePlayheadUI(); syncVoicePreview(true); });
+video.addEventListener('ended', () => video.pause());
+
+function isTypingTarget(el) {
+  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
+function openShortcutHelp() {
+  const rows = [
+    ['Space', state.lang === 'th' ? 'เล่น/หยุด' : 'Play/Pause'],
+    ['B / C / ⌘B', state.lang === 'th' ? 'แบ่งท่อนที่ playhead' : 'Split at playhead'],
+    ['I / O', state.lang === 'th' ? 'ตั้งหัว/หางท่อนที่เลือก' : 'Set in/out point'],
+    ['Q / W', state.lang === 'th' ? 'ตัดซ้าย/ขวาถึง playhead' : 'Trim left/right to playhead'],
+    ['Delete', state.lang === 'th' ? 'ลบ item ที่เลือก' : 'Delete selected item'],
+    ['⌘/Ctrl+Z', state.lang === 'th' ? 'Undo' : 'Undo'],
+    ['⇧⌘/Ctrl+Z', state.lang === 'th' ? 'Redo' : 'Redo'],
+    ['← / →', state.lang === 'th' ? 'เลื่อน playhead 0.1 วิ' : 'Seek 0.1s'],
+    ['⇧← / ⇧→', state.lang === 'th' ? 'เลื่อน playhead 1 วิ' : 'Seek 1s'],
+    ['Home / End', state.lang === 'th' ? 'ไปต้น/ท้ายวิดีโอ' : 'Go to start/end'],
+    ['J / K / L', state.lang === 'th' ? 'ถอย / หยุด / เล่น' : 'Back / Stop / Play'],
+    ['↑ / ↓', state.lang === 'th' ? 'เลือกท่อนก่อนหน้า/ถัดไป' : 'Select previous/next segment'],
+    ['[ / ]', state.lang === 'th' ? 'เลือกท่อนก่อนหน้า/ถัดไป' : 'Select previous/next segment'],
+    ['A / V', state.lang === 'th' ? 'เลือกท่อนปัจจุบัน / ล้าง selection' : 'Select current / clear selection'],
+    ['⌘/Ctrl + + / -', state.lang === 'th' ? 'ซูม timeline เข้า/ออก' : 'Zoom timeline in/out'],
+    ['⇧Z', state.lang === 'th' ? 'Fit timeline' : 'Fit timeline'],
+    ['R', state.lang === 'th' ? 'เริ่ม/หยุด voice over' : 'Start/stop voice over'],
+    ['?', state.lang === 'th' ? 'เปิดหน้าคีย์ลัด' : 'Show shortcuts'],
+  ];
+  $('shortcutTitle').textContent = tr('shortcuts');
+  $('shortcutClose').textContent = tr('close');
+  $('shortcutGrid').innerHTML = rows.map(([key, label]) =>
+    `<div class="shortcut-item"><span>${label}</span><kbd>${key}</kbd></div>`).join('');
+  $('shortcutOverlay').classList.add('visible');
+}
+$('shortcutBtn').onclick = openShortcutHelp;
+$('shortcutClose').onclick = () => $('shortcutOverlay').classList.remove('visible');
+$('shortcutOverlay').addEventListener('click', e => { if (e.target === $('shortcutOverlay')) $('shortcutOverlay').classList.remove('visible'); });
+
+document.addEventListener('keydown', e => {
+  if (isTypingTarget(e.target) || state.exporting) return;
+  const mod = e.metaKey || e.ctrlKey;
+  const key = e.key.toLowerCase();
+
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); openShortcutHelp(); return; }
+  if (e.key === 'Escape') {
+    $('shortcutOverlay').classList.remove('visible');
+    $('diagOverlay').classList.remove('visible');
+    return;
+  }
+  if (!state.loaded || state.mode !== 'video') return;
+
+  if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redoEdit() : undoEdit(); return; }
+  if ((mod && key === 'b') || key === 'b' || key === 'c') { e.preventDefault(); splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(); return; }
+  if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); actionDeleteSelected(); return; }
+  if (key === 'i' || key === 'q') { e.preventDefault(); actionTrimStartToPlayhead(); return; }
+  if (key === 'o' || key === 'w') { e.preventDefault(); actionTrimEndToPlayhead(); return; }
+  if (key === 'r') { e.preventDefault(); $('voiceBtn').click(); return; }
+  if (key === 'j') { e.preventDefault(); video.pause(); seekBy(e.shiftKey ? -1 : -0.5); return; }
+  if (key === 'k') { e.preventDefault(); video.pause(); return; }
+  if (key === 'l') { e.preventDefault(); if (video.paused) playBtn.onclick(); else video.playbackRate = Math.min(4, (video.playbackRate || 1) + 0.5); return; }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(e.shiftKey ? -1 : -0.1); return; }
+  if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(e.shiftKey ? 1 : 0.1); return; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); selectSegmentNearPlayhead(-1); return; }
+  if (e.key === 'ArrowDown') { e.preventDefault(); selectSegmentNearPlayhead(1); return; }
+  if (e.key === '[') { e.preventDefault(); selectSegmentNearPlayhead(-1); return; }
+  if (e.key === ']') { e.preventDefault(); selectSegmentNearPlayhead(1); return; }
+  if (!mod && key === 'a') {
+    e.preventDefault();
+    const s = segAt(video.currentTime);
+    if (s) { state.selectedSeg = s.id; updateSegUI(); }
+    return;
+  }
+  if (!mod && key === 'v') {
+    e.preventDefault();
+    state.selectedSeg = null; state.selectedId = null; state.selectedVoiceId = null; state.selectedFaceId = null;
+    updateSegUI(); updateTimelineUI(); updateVoiceUI(); updateCameraUI();
+    return;
+  }
+  if (e.key === 'Home') { e.preventDefault(); video.currentTime = 0; return; }
+  if (e.key === 'End') { e.preventDefault(); video.currentTime = video.duration || 0; return; }
+  if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); setTimelineZoom(state.timelineZoom * 1.25); return; }
+  if (mod && e.key === '-') { e.preventDefault(); setTimelineZoom(state.timelineZoom / 1.25); return; }
+  if (e.shiftKey && key === 'z') { e.preventDefault(); state.timelineZoom = 1; updateTimelineScale(0); return; }
+});
+
+// ---------- Timeline ----------
+const timeline = $('timeline');
+const playhead = $('playhead');
+const voiceRec = {
+  active: false, recorder: null, stream: null, chunks: [], start: 0, startedAt: 0,
+  camChunks: [], camRecorder: null, camStream: null,
+  audioCtx: null, analyser: null, data: null, meterRaf: null,
+};
+let exportAudioCtx = null;
+let videoAudioSourceNode = null;
+
+function fmtTime(t) {
+  const m = Math.floor(t / 60), s = (t % 60);
+  return `${m}:${s.toFixed(1).padStart(4, '0')}`;
+}
+
+async function refreshMicDevices() {
+  const sel = $('micSel');
+  sel.innerHTML = `<option value="">${tr('micLoading')}</option>`;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    sel.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = tr('micDefault');
+    sel.appendChild(def);
+    mics.forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || `${tr('micDefault')} ${i + 1}`;
+      if (state.selectedMicId && d.deviceId === state.selectedMicId) o.selected = true;
+      sel.appendChild(o);
+    });
+    if (!mics.length) sel.innerHTML = `<option value="">${tr('micNoDevices')}</option>`;
+  } catch {
+    sel.innerHTML = `<option value="">${tr('micDefault')}</option>`;
+  }
+}
+async function refreshCameraDevices() {
+  const sel = $('camSel');
+  sel.innerHTML = `<option value="">${tr('camLoading')}</option>`;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d => d.kind === 'videoinput');
+    sel.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = tr('camDefault');
+    sel.appendChild(def);
+    cams.forEach((d, i) => {
+      const o = document.createElement('option');
+      o.value = d.deviceId;
+      o.textContent = d.label || `${tr('camDefault')} ${i + 1}`;
+      if (state.selectedCamId && d.deviceId === state.selectedCamId) o.selected = true;
+      sel.appendChild(o);
+    });
+    if (!cams.length) sel.innerHTML = `<option value="">${tr('camNoDevices')}</option>`;
+  } catch {
+    sel.innerHTML = `<option value="">${tr('camDefault')}</option>`;
+  }
+}
+$('micSel').onchange = e => {
+  state.selectedMicId = e.target.value;
+  localStorage.setItem('zoomcut-mic', state.selectedMicId);
+};
+$('camSel').onchange = e => {
+  state.selectedCamId = e.target.value;
+  localStorage.setItem('zoomcut-camera', state.selectedCamId);
+};
+$('camToggle').onclick = () => {
+  state.recordCamera = !state.recordCamera;
+  localStorage.setItem('zoomcut-record-camera', state.recordCamera ? '1' : '0');
+  applyLanguage();
+};
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', () => { refreshMicDevices(); refreshCameraDevices(); });
+}
+refreshMicDevices();
+refreshCameraDevices();
+
+function startMicMeter(stream) {
+  stopMicMeter();
+  voiceRec.audioCtx = new AudioContext();
+  const src = voiceRec.audioCtx.createMediaStreamSource(stream);
+  voiceRec.analyser = voiceRec.audioCtx.createAnalyser();
+  voiceRec.analyser.fftSize = 1024;
+  voiceRec.data = new Uint8Array(voiceRec.analyser.fftSize);
+  src.connect(voiceRec.analyser);
+  const tick = () => {
+    if (!voiceRec.active || !voiceRec.analyser) return;
+    voiceRec.analyser.getByteTimeDomainData(voiceRec.data);
+    let sum = 0;
+    for (const v of voiceRec.data) {
+      const x = (v - 128) / 128;
+      sum += x * x;
+    }
+    const rms = Math.sqrt(sum / voiceRec.data.length);
+    $('micLevel').style.width = Math.min(100, Math.round(rms * 280)) + '%';
+    voiceRec.meterRaf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function stopMicMeter() {
+  if (voiceRec.meterRaf) cancelAnimationFrame(voiceRec.meterRaf);
+  voiceRec.meterRaf = null;
+  $('micLevel').style.width = '0%';
+  if (voiceRec.audioCtx) voiceRec.audioCtx.close().catch(() => {});
+  voiceRec.audioCtx = null;
+  voiceRec.analyser = null;
+  voiceRec.data = null;
+}
+
+async function voicePeaksFromBlob(blob, buckets = 48) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const ac = new AC();
+  try {
+    const buffer = await ac.decodeAudioData(await blob.arrayBuffer());
+    const data = buffer.getChannelData(0);
+    const step = Math.max(1, Math.floor(data.length / buckets));
+    const peaks = [];
+    for (let i = 0; i < buckets; i++) {
+      let max = 0;
+      const start = i * step, end = Math.min(data.length, start + step);
+      for (let j = start; j < end; j++) max = Math.max(max, Math.abs(data[j]));
+      peaks.push(Math.min(1, max));
+    }
+    return peaks;
+  } catch {
+    return Array.from({ length: buckets }, () => 0.08);
+  } finally {
+    ac.close().catch(() => {});
+  }
+}
+function waveformHtml(peaks = []) {
+  const vals = peaks.length ? peaks : Array.from({ length: 32 }, () => 0.08);
+  return `<div class="voice-wave">${vals.map(v => `<span style="height:${Math.max(12, Math.round(v * 100))}%"></span>`).join('')}</div>`;
+}
+
+async function startVoiceover() {
+  if (!state.loaded || state.mode !== 'video' || voiceRec.active) return;
+  let stream;
+  try {
+    const audio = state.selectedMicId ? { deviceId: { exact: state.selectedMicId }, echoCancellation: true, noiseSuppression: true } : { echoCancellation: true, noiseSuppression: true };
+    stream = await navigator.mediaDevices.getUserMedia({ audio });
+    await refreshMicDevices();
+  } catch (e) {
+    alert(tr('micPermission'));
+    return;
+  }
+  voiceRec.active = true;
+  voiceRec.stream = stream;
+  voiceRec.chunks = [];
+  voiceRec.camChunks = [];
+  voiceRec.start = sourceToOutputTime(video.currentTime);
+  voiceRec.startedAt = performance.now();
+  voiceRec.recorder = new MediaRecorder(stream);
+  voiceRec.recorder.ondataavailable = e => { if (e.data.size) voiceRec.chunks.push(e.data); };
+  voiceRec.recorder.onstop = async () => {
+    const blob = new Blob(voiceRec.chunks, { type: voiceRec.recorder.mimeType || 'audio/webm' });
+    const duration = Math.max(0.1, (performance.now() - voiceRec.startedAt) / 1000);
+    const url = URL.createObjectURL(blob);
+    const peaks = await voicePeaksFromBlob(blob);
+    commitHistory();
+    state.voiceovers.push({
+      id: voiceId++,
+      start: outputToSourceTime(voiceRec.start),
+      duration: Math.min(duration, Math.max(0.1, outputDuration() - voiceRec.start)),
+      outStart: Math.min(outputDuration() - 0.1, Math.max(0, voiceRec.start)),
+      outDuration: Math.min(duration, Math.max(0.1, outputDuration() - voiceRec.start)),
+      blob, url, peaks,
+      name: tr('voiceClip', voiceId - 1),
+      audio: new Audio(url),
+    });
+    voiceRec.stream.getTracks().forEach(t => t.stop());
+    stopMicMeter();
+    voiceRec.active = false;
+    $('voiceBtn').classList.remove('recording');
+    $('voiceBtn').textContent = tr('voice');
+    updateVoiceUI();
+  };
+  if (state.recordCamera) {
+    try {
+      const videoConstraints = state.selectedCamId ? { deviceId: { exact: state.selectedCamId }, width: { ideal: 1280 }, height: { ideal: 720 } } : { width: { ideal: 1280 }, height: { ideal: 720 } };
+      voiceRec.camStream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      await refreshCameraDevices();
+      voiceRec.camRecorder = new MediaRecorder(voiceRec.camStream, { mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm' });
+      voiceRec.camRecorder.ondataavailable = e => { if (e.data.size) voiceRec.camChunks.push(e.data); };
+      voiceRec.camRecorder.onstop = () => {
+        const blob = new Blob(voiceRec.camChunks, { type: voiceRec.camRecorder.mimeType || 'video/webm' });
+        const outDuration = Math.max(0.1, (performance.now() - voiceRec.startedAt) / 1000);
+        const url = URL.createObjectURL(blob);
+        const v = document.createElement('video');
+        v.src = url; v.muted = true; v.playsInline = true;
+        commitHistory();
+        state.facecams.push({
+          id: faceId++,
+          start: outputToSourceTime(voiceRec.start),
+          duration: Math.min(outDuration, Math.max(0.1, outputDuration() - voiceRec.start)),
+          outStart: voiceRec.start,
+          outDuration: Math.min(outDuration, Math.max(0.1, outputDuration() - voiceRec.start)),
+          mediaOffset: 0,
+          blob, url, video: v,
+          fadeIn: state.camDefaults.fadeIn, fadeOut: state.camDefaults.fadeOut,
+          pos: state.camDefaults.pos, shape: state.camDefaults.shape, size: state.camDefaults.size, margin: state.camDefaults.margin,
+          name: tr('cameraClip', faceId - 1),
+        });
+        voiceRec.camStream.getTracks().forEach(t => t.stop());
+        voiceRec.camStream = null;
+        updateCameraUI();
+      };
+      voiceRec.camRecorder.start(250);
+    } catch (e) {
+      alert(state.lang === 'th' ? 'เปิดกล้องไม่ได้ — ตรวจสิทธิ์ Camera ให้ ZoomCut' : 'Cannot open camera. Check ZoomCut Camera permission.');
+    }
+  }
+  voiceRec.recorder.start(250);
+  startMicMeter(stream);
+  $('voiceBtn').classList.add('recording');
+  $('voiceBtn').textContent = tr('stopVoice');
+}
+function stopVoiceover() {
+  if (!voiceRec.active) return;
+  try { voiceRec.recorder.stop(); } catch {}
+  try { if (voiceRec.camRecorder && voiceRec.camRecorder.state !== 'inactive') voiceRec.camRecorder.stop(); } catch {}
+}
+$('voiceBtn').onclick = () => voiceRec.active ? stopVoiceover() : startVoiceover();
+
+function updateVoiceUI() {
+  const track = $('voiceTrack');
+  track.innerHTML = '';
+  if (!video.duration) return;
+  for (const v of state.voiceovers) {
+    const el = document.createElement('div');
+    const outStart = voiceOutStart(v);
+    const outEnd = outStart + voiceOutDuration(v);
+    const sourceStart = outputToSourceTime(outStart);
+    const sourceEnd = outputToSourceTime(outEnd);
+    el.className = 'voice-clip' + (v.id === state.selectedVoiceId ? ' selected' : '');
+    el.dataset.id = v.id;
+    el.style.left = (sourceStart / video.duration * 100) + '%';
+    el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
+    el.innerHTML = `<span class="clip-handle left" data-edge="left"></span>${waveformHtml(v.peaks)}<span class="voice-label">${v.name || tr('voiceClip', v.id)}</span><span class="clip-handle right" data-edge="right"></span>`;
+    track.appendChild(el);
+  }
+  const sel = state.voiceovers.find(v => v.id === state.selectedVoiceId);
+  const panel = $('voiceEdit');
+  if (sel) {
+    panel.classList.add('visible');
+    $('voiceEditLabel').textContent = `🎙 ${sel.name || tr('voiceClip', sel.id)} ${fmtTime(voiceOutStart(sel))}–${fmtTime(voiceOutStart(sel) + voiceOutDuration(sel))}`;
+  } else {
+    panel.classList.remove('visible');
+  }
+}
+$('voiceTrack').addEventListener('click', e => {
+  const clip = e.target.closest('.voice-clip');
+  if (!clip) return;
+  state.selectedVoiceId = parseInt(clip.dataset.id);
+  const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+  if (v) video.currentTime = outputToSourceTime(voiceOutStart(v));
+  updateVoiceUI();
+});
+let voiceDrag = null;
+$('voiceTrack').addEventListener('pointerdown', e => {
+  const clip = e.target.closest('.voice-clip');
+  if (!clip || !state.loaded) return;
+  state.selectedVoiceId = parseInt(clip.dataset.id);
+  const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+  if (!v) return;
+  const bounds = $('voiceTrack').getBoundingClientRect();
+  const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
+  const outT = sourceToOutputTime(sourceT);
+  const edge = e.target.closest('.clip-handle')?.dataset.edge || null;
+  commitHistory();
+  voiceDrag = { clip: v, edge, offset: outT - clipOutStart(v) };
+  $('voiceTrack').setPointerCapture(e.pointerId);
+  video.currentTime = outputToSourceTime(clipOutStart(v));
+  updateVoiceUI();
+});
+$('voiceTrack').addEventListener('pointermove', e => {
+  if (!voiceDrag) return;
+  const bounds = $('voiceTrack').getBoundingClientRect();
+  const sourceT = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
+  const outT = sourceToOutputTime(sourceT);
+  if (voiceDrag.edge === 'left') setClipOutStart(voiceDrag.clip, outT);
+  else if (voiceDrag.edge === 'right') setClipOutEnd(voiceDrag.clip, outT);
+  else moveClipOut(voiceDrag.clip, outT - voiceDrag.offset);
+  updateVoiceUI();
+});
+$('voiceTrack').addEventListener('pointerup', () => { voiceDrag = null; });
+$('voiceDelete').onclick = () => {
+  commitHistory();
+  const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+  if (v && v.audio) v.audio.pause();
+  state.voiceovers = state.voiceovers.filter(x => x.id !== state.selectedVoiceId);
+  state.selectedVoiceId = null;
+  updateVoiceUI();
+};
+function stopVoicePreview() {
+  for (const v of state.voiceovers) {
+    if (!v.audio) continue;
+    v.audio.pause();
+  }
+}
+function syncVoicePreview(force = false) {
+  if (!state.loaded || state.exporting || state.mode !== 'video') return;
+  const outT = sourceToOutputTime(video.currentTime);
+  for (const v of state.voiceovers) {
+    if (!v.audio) v.audio = new Audio(v.url);
+    const start = voiceOutStart(v), dur = voiceOutDuration(v);
+    const inClip = !video.paused && outT >= start && outT <= start + dur && !!segAt(video.currentTime);
+    if (!inClip) { v.audio.pause(); continue; }
+    const off = Math.max(0, outT - start);
+    if (force || Math.abs(v.audio.currentTime - off) > 0.12) v.audio.currentTime = off;
+    v.audio.playbackRate = 1;
+    if (v.audio.paused) v.audio.play().catch(() => {});
+  }
+}
+
+function updateCameraUI() {
+  const track = $('cameraTrack');
+  track.innerHTML = '';
+  if (!video.duration) return;
+  for (const c of state.facecams) {
+    const outStart = clipOutStart(c);
+    const outEnd = outStart + clipOutDuration(c);
+    const sourceStart = outputToSourceTime(outStart);
+    const sourceEnd = outputToSourceTime(outEnd);
+    const el = document.createElement('div');
+    el.className = 'camera-clip' + (c.id === state.selectedFaceId ? ' selected' : '');
+    el.dataset.id = c.id;
+    el.style.left = (sourceStart / video.duration * 100) + '%';
+    el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
+    el.innerHTML = `<span class="clip-handle left" data-edge="left"></span><span class="voice-label">${c.name || tr('cameraClip', c.id)}</span><span class="clip-handle right" data-edge="right"></span>`;
+    track.appendChild(el);
+  }
+  const sel = state.facecams.find(c => c.id === state.selectedFaceId);
+  const panel = $('cameraEdit');
+  if (sel) {
+    panel.classList.add('visible');
+    $('cameraEditLabel').textContent = `${sel.name || tr('cameraClip', sel.id)} ${fmtTime(clipOutStart(sel))}–${fmtTime(clipOutStart(sel) + clipOutDuration(sel))}`;
+    $('camPos').value = sel.pos || state.camDefaults.pos;
+    $('camShape').value = sel.shape || state.camDefaults.shape;
+    $('camSize').value = sel.size ?? state.camDefaults.size;
+    $('camMargin').value = sel.margin ?? state.camDefaults.margin;
+    $('camSizeVal').textContent = `${sel.size ?? state.camDefaults.size}%`;
+    $('camMarginVal').textContent = `${sel.margin ?? state.camDefaults.margin}%`;
+    $('camFadeIn').value = sel.fadeIn ?? 0;
+    $('camFadeOut').value = sel.fadeOut ?? 0;
+    $('camFadeInVal').textContent = (sel.fadeIn ?? 0).toFixed(1) + 's';
+    $('camFadeOutVal').textContent = (sel.fadeOut ?? 0).toFixed(1) + 's';
+  } else {
+    panel.classList.remove('visible');
+  }
+}
+let camDrag = null;
+$('cameraTrack').addEventListener('pointerdown', e => {
+  const clip = e.target.closest('.camera-clip');
+  if (!clip || !state.loaded) return;
+  state.selectedFaceId = parseInt(clip.dataset.id);
+  const c = state.facecams.find(x => x.id === state.selectedFaceId);
+  if (!c) return;
+  const bounds = $('cameraTrack').getBoundingClientRect();
+  const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
+  const outT = sourceToOutputTime(sourceT);
+  const edge = e.target.closest('.clip-handle')?.dataset.edge || null;
+  commitHistory();
+  camDrag = { clip: c, edge, offset: outT - clipOutStart(c) };
+  $('cameraTrack').setPointerCapture(e.pointerId);
+  video.currentTime = outputToSourceTime(clipOutStart(c));
+  updateCameraUI();
+});
+$('cameraTrack').addEventListener('pointermove', e => {
+  if (!camDrag) return;
+  const bounds = $('cameraTrack').getBoundingClientRect();
+  const sourceT = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
+  const outT = sourceToOutputTime(sourceT);
+  if (camDrag.edge === 'left') setClipOutStart(camDrag.clip, outT);
+  else if (camDrag.edge === 'right') setClipOutEnd(camDrag.clip, outT);
+  else moveClipOut(camDrag.clip, outT - camDrag.offset);
+  updateCameraUI(); requestRender();
+});
+$('cameraTrack').addEventListener('pointerup', () => { camDrag = null; });
+$('cameraDelete').onclick = () => {
+  commitHistory();
+  state.facecams = state.facecams.filter(x => x.id !== state.selectedFaceId);
+  state.selectedFaceId = null;
+  updateCameraUI(); requestRender();
+};
+function bindCameraFade(id, key, valId) {
+  $(id).addEventListener('input', e => {
+    const c = state.facecams.find(x => x.id === state.selectedFaceId);
+    const val = parseFloat(e.target.value);
+    if (c) c[key] = val;
+    else state.camDefaults[key] = val;
+    $(valId).textContent = val.toFixed(1) + 's';
+    requestRender();
+  });
+}
+bindCameraFade('camFadeIn', 'fadeIn', 'camFadeInVal');
+bindCameraFade('camFadeOut', 'fadeOut', 'camFadeOutVal');
+function bindCameraControl(id, key, valId, fmt) {
+  $(id).addEventListener('input', e => {
+    const c = state.facecams.find(x => x.id === state.selectedFaceId);
+    const val = e.target.type === 'range' ? parseFloat(e.target.value) : e.target.value;
+    if (c) c[key] = val;
+    else state.camDefaults[key] = val;
+    if (valId) $(valId).textContent = fmt ? fmt(val) : String(val);
+    requestRender();
+  });
+}
+bindCameraControl('camPos', 'pos');
+bindCameraControl('camShape', 'shape');
+bindCameraControl('camSize', 'size', 'camSizeVal', v => `${v}%`);
+bindCameraControl('camMargin', 'margin', 'camMarginVal', v => `${v}%`);
+
+function updatePlayheadUI() {
+  if (!state.loaded || !video.duration) return;
+  const frac = video.currentTime / video.duration;
+  playhead.style.left = (frac * 100) + '%';
+  const outLen = outputDuration();
+  const edited = state.segments.length > 1 || state.segments.some(s => s.speed !== 1)
+    || (state.segments[0] && (state.segments[0].start > 0.05 || state.segments[0].end < video.duration - 0.05));
+  $('timeLabel').textContent = `${fmtTime(video.currentTime)} / ${fmtTime(video.duration)}`
+    + (edited ? ` • ${tr('output')} ${fmtTime(outLen)}` : '');
+}
+
+// ---------- Segments (ตัดหลายท่อน + speed แยกท่อน) ----------
+let segId = 1;
+function initSegments() {
+  state.segments = [{ id: segId++, start: 0, end: video.duration, speed: 1 }];
+  state.selectedSeg = null;
+  updateSegUI();
+}
+function outputDuration() {
+  return state.segments.reduce((a, s) => a + (s.end - s.start) / s.speed, 0);
+}
+function segmentOutputStart(target) {
+  let out = 0;
+  for (const s of state.segments) {
+    if (s === target || s.id === target.id) return out;
+    out += (s.end - s.start) / s.speed;
+  }
+  return out;
+}
+function sourceToOutputTime(t) {
+  let out = 0;
+  for (const s of state.segments) {
+    if (t >= s.start - 1e-3 && t <= s.end + 1e-3) return out + Math.max(0, t - s.start) / s.speed;
+    out += (s.end - s.start) / s.speed;
+  }
+  return Math.max(0, Math.min(outputDuration(), out));
+}
+function outputToSourceTime(outT) {
+  let cursor = 0;
+  for (const s of state.segments) {
+    const len = (s.end - s.start) / s.speed;
+    if (outT <= cursor + len + 1e-3) return Math.min(s.end, s.start + Math.max(0, outT - cursor) * s.speed);
+    cursor += len;
+  }
+  const last = state.segments[state.segments.length - 1];
+  return last ? last.end : 0;
+}
+function voiceOutStart(v) {
+  if (v.outStart !== undefined) return v.outStart;
+  return sourceToOutputTime(v.start || 0);
+}
+function voiceOutDuration(v) {
+  return v.outDuration !== undefined ? v.outDuration : (v.duration || 0);
+}
+function clipMediaOffset(c) { return c.mediaOffset || 0; }
+function clipOutStart(c) { return c.outStart !== undefined ? c.outStart : voiceOutStart(c); }
+function clipOutDuration(c) { return c.outDuration !== undefined ? c.outDuration : voiceOutDuration(c); }
+function setClipOutStart(c, start) {
+  const end = clipOutStart(c) + clipOutDuration(c);
+  c.outStart = Math.max(0, Math.min(start, end - 0.1));
+  c.outDuration = Math.max(0.1, end - c.outStart);
+  c.start = outputToSourceTime(c.outStart);
+  c.duration = c.outDuration;
+}
+function setClipOutEnd(c, end) {
+  c.outDuration = Math.max(0.1, end - clipOutStart(c));
+  c.duration = c.outDuration;
+}
+function moveClipOut(c, start) {
+  const dur = clipOutDuration(c);
+  c.outStart = Math.max(0, Math.min(outputDuration() - dur, start));
+  c.start = outputToSourceTime(c.outStart);
+}
+function segAt(t) {
+  return state.segments.find(s => t >= s.start - 1e-3 && t < s.end - 1e-3)
+      || state.segments.find(s => t >= s.start - 1e-3 && t <= s.end + 1e-3);
+}
+function firstSeg() { return state.segments[0]; }
+
+function actionSplitAtPlayhead() {
+  const t = video.currentTime;
+  const s = segAt(t);
+  if (!s || t <= s.start + 0.05 || t >= s.end - 0.05) return false;
+  commitHistory();
+  const idx = state.segments.indexOf(s);
+  const right = { id: segId++, start: t, end: s.end, speed: s.speed };
+  s.end = t;
+  state.segments.splice(idx + 1, 0, right);
+  state.selectedSeg = right.id;
+  updateSegUI();
+  return true;
+}
+function actionTrimStartToPlayhead() {
+  const t = video.currentTime;
+  const s = state.segments.find(x => x.id === state.selectedSeg) || segAt(t);
+  if (!s || t <= s.start + 0.05 || t >= s.end - 0.05) return false;
+  commitHistory();
+  s.start = t;
+  state.selectedSeg = s.id;
+  updateSegUI();
+  return true;
+}
+function actionTrimEndToPlayhead() {
+  const t = video.currentTime;
+  const s = state.segments.find(x => x.id === state.selectedSeg) || segAt(t);
+  if (!s || t <= s.start + 0.05 || t >= s.end - 0.05) return false;
+  commitHistory();
+  s.end = t;
+  state.selectedSeg = s.id;
+  updateSegUI();
+  return true;
+}
+function actionDeleteSelected() {
+  if (state.selectedId) {
+    commitHistory();
+    state.events = state.events.filter(e => e.id !== state.selectedId);
+    state.selectedId = null;
+    updateTimelineUI(); requestRender();
+    return true;
+  }
+  if (state.selectedVoiceId) {
+    commitHistory();
+    const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+    if (v && v.audio) v.audio.pause();
+    state.voiceovers = state.voiceovers.filter(x => x.id !== state.selectedVoiceId);
+    state.selectedVoiceId = null;
+    updateVoiceUI();
+    return true;
+  }
+  if (state.selectedFaceId) {
+    commitHistory();
+    state.facecams = state.facecams.filter(x => x.id !== state.selectedFaceId);
+    state.selectedFaceId = null;
+    updateCameraUI();
+    requestRender();
+    return true;
+  }
+  if (state.selectedSeg && state.segments.length > 1) {
+    commitHistory();
+    state.segments = state.segments.filter(s => s.id !== state.selectedSeg);
+    state.selectedSeg = null;
+    updateSegUI();
+    jumpToSegStart();
+    return true;
+  }
+  return false;
+}
+function splitVoiceAtPlayhead() {
+  const outT = sourceToOutputTime(video.currentTime);
+  const v = state.voiceovers.find(x => outT > clipOutStart(x) + 0.05 && outT < clipOutStart(x) + clipOutDuration(x) - 0.05);
+  if (!v) return false;
+  commitHistory();
+  const leftDur = outT - clipOutStart(v);
+  const rightDur = clipOutDuration(v) - leftDur;
+  const right = { ...v, id: voiceId++, outStart: outT, outDuration: rightDur, start: outputToSourceTime(outT), duration: rightDur, mediaOffset: clipMediaOffset(v) + leftDur, name: tr('voiceClip', voiceId - 1), audio: new Audio(v.url) };
+  v.outDuration = leftDur; v.duration = leftDur;
+  state.voiceovers.push(right);
+  state.selectedVoiceId = right.id;
+  updateVoiceUI();
+  return true;
+}
+function splitCameraAtPlayhead() {
+  const outT = sourceToOutputTime(video.currentTime);
+  const c = state.facecams.find(x => outT > clipOutStart(x) + 0.05 && outT < clipOutStart(x) + clipOutDuration(x) - 0.05);
+  if (!c) return false;
+  commitHistory();
+  const leftDur = outT - clipOutStart(c);
+  const rightDur = clipOutDuration(c) - leftDur;
+  const rightVideo = document.createElement('video');
+  rightVideo.src = c.url; rightVideo.muted = true; rightVideo.playsInline = true;
+  const right = { ...c, id: faceId++, outStart: outT, outDuration: rightDur, start: outputToSourceTime(outT), duration: rightDur, mediaOffset: clipMediaOffset(c) + leftDur, name: tr('cameraClip', faceId - 1), video: rightVideo };
+  c.outDuration = leftDur; c.duration = leftDur;
+  state.facecams.push(right);
+  state.selectedFaceId = right.id;
+  updateCameraUI();
+  return true;
+}
+function selectSegmentNearPlayhead(dir = 1) {
+  if (!state.segments.length) return;
+  const ordered = state.segments.slice().sort((a, b) => a.start - b.start);
+  let idx = ordered.findIndex(s => s.id === state.selectedSeg);
+  if (idx < 0) idx = ordered.findIndex(s => video.currentTime < s.end);
+  idx = Math.min(ordered.length - 1, Math.max(0, idx + dir));
+  state.selectedSeg = ordered[idx].id;
+  video.currentTime = ordered[idx].start;
+  updateSegUI();
+}
+function seekBy(delta) {
+  if (!state.loaded || state.mode !== 'video') return;
+  video.currentTime = Math.min(video.duration || 0, Math.max(0, video.currentTime + delta));
+}
+function setTimelineZoom(next) {
+  if (!state.loaded) return;
+  const dur = video.duration || 1;
+  const anchor = dur ? video.currentTime / dur : 0;
+  state.timelineZoom = Math.min(8, Math.max(1, next));
+  updateTimelineScale(anchor);
+}
+
+function updateSegUI() {
+  const track = $('segTrack');
+  track.innerHTML = '';
+  if (!video.duration) return;
+  for (const s of state.segments) {
+    const el = document.createElement('div');
+    el.className = 'seg-block' + (s.id === state.selectedSeg ? ' selected' : '') + (s.speed > 1 ? ' fast' : '');
+    el.style.left = (s.start / video.duration * 100) + '%';
+    el.style.width = ((s.end - s.start) / video.duration * 100) + '%';
+    el.dataset.id = s.id;
+    el.innerHTML = `<span class="seg-handle left" data-edge="left"></span><span class="spd">${s.speed}x</span><span class="seg-handle right" data-edge="right"></span>`;
+    track.appendChild(el);
+  }
+  updateRulerUI();
+  updateVoiceUI();
+  updateCameraUI();
+  const sel = state.segments.find(s => s.id === state.selectedSeg);
+  const panel = $('segEdit');
+  if (sel) {
+    panel.classList.add('visible');
+    $('segSpeed').value = String(sel.speed);
+    $('segEditLabel').textContent = `🎞 ท่อน ${fmtTime(sel.start)}–${fmtTime(sel.end)}`;
+  } else {
+    panel.classList.remove('visible');
+  }
+  updatePlayheadUI();
+}
+
+function updateRulerUI() {
+  const ruler = $('ruler');
+  ruler.innerHTML = '';
+  if (!video.duration) return;
+  const approxTicks = Math.min(10, Math.max(4, Math.floor(video.duration / 2)));
+  const step = video.duration / approxTicks;
+  for (let i = 0; i <= approxTicks; i++) {
+    const t = Math.min(video.duration, i * step);
+    const el = document.createElement('div');
+    el.className = 'ruler-tick';
+    el.style.left = (t / video.duration * 100) + '%';
+    el.textContent = fmtTime(t);
+    ruler.appendChild(el);
+  }
+}
+
+function clampSegment(s) {
+  const minLen = 0.1;
+  const ordered = state.segments.slice().sort((a, b) => a.start - b.start);
+  const idx = ordered.indexOf(s);
+  const prev = ordered[idx - 1];
+  const next = ordered[idx + 1];
+  s.start = Math.max(prev ? prev.end : 0, Math.min(s.start, s.end - minLen));
+  s.end = Math.min(next ? next.start : video.duration, Math.max(s.end, s.start + minLen));
+}
+
+let segDrag = null;
+$('segTrack').addEventListener('pointerdown', e => {
+  const block = e.target.closest('.seg-block');
+  if (!block) return;
+  state.selectedSeg = parseInt(block.dataset.id);
+  const s = state.segments.find(x => x.id === state.selectedSeg);
+  if (!s) return;
+  const bounds = $('segTrack').getBoundingClientRect();
+  const edge = e.target.closest('.seg-handle')?.dataset.edge || null;
+  const t = (e.clientX - bounds.left) / bounds.width * video.duration;
+  segDrag = { s, edge, offsetStart: t - s.start, offsetEnd: s.end - t };
+  if (edge) commitHistory();
+  $('segTrack').setPointerCapture(e.pointerId);
+  video.currentTime = edge === 'right' ? s.end : s.start;
+  updateSegUI();
+});
+$('segTrack').addEventListener('pointermove', e => {
+  if (!segDrag || !video.duration) return;
+  const bounds = $('segTrack').getBoundingClientRect();
+  const raw = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
+  if (segDrag.edge === 'left') {
+    segDrag.s.start = raw;
+    clampSegment(segDrag.s);
+    video.currentTime = segDrag.s.start;
+  } else if (segDrag.edge === 'right') {
+    segDrag.s.end = raw;
+    clampSegment(segDrag.s);
+    video.currentTime = Math.max(segDrag.s.start, segDrag.s.end - 0.02);
+  }
+  updateSegUI();
+});
+$('segTrack').addEventListener('pointerup', () => { segDrag = null; });
+
+$('splitBtn').onclick = () => {
+  actionSplitAtPlayhead();
+};
+
+$('segDelete').onclick = () => {
+  if (state.segments.length <= 1) { alert(tr('oneSegmentRequired')); return; }
+  commitHistory();
+  state.segments = state.segments.filter(s => s.id !== state.selectedSeg);
+  state.selectedSeg = null;
+  updateSegUI();
+  jumpToSegStart();
+};
+
+$('segSpeed').addEventListener('change', e => {
+  const s = state.segments.find(x => x.id === state.selectedSeg);
+  if (!s) return;
+  commitHistory();
+  s.speed = parseFloat(e.target.value);
+  if (segAt(video.currentTime) === s) video.playbackRate = s.speed;
+  updateSegUI();
+});
+
+// เลื่อน playhead ไปยังต้นท่อนแรกที่ยังเหลือ (ใช้หลังลบท่อน)
+function jumpToSegStart() {
+  if (state.segments.length) video.currentTime = state.segments[0].start;
+}
+
+// ตัวขับการเล่นแบบข้ามช่องที่ถูกตัด + ใช้ speed ต่อท่อน
+// timeupdate เป็น backup ให้การข้ามช่วงตัดทำงานแม้แท็บถูกพักเบื้องหลัง (rAF หยุด)
+video.addEventListener('timeupdate', () => {
+  if (state.mode === 'video' && !video.paused) segPlaybackTick();
+});
+
+// ติดตามท่อนที่กำลังเล่นด้วย index (ชัดเจน ไม่กำกวมที่ขอบท่อน)
+let playIdx = 0;
+function startSegPlayback() {
+  // เริ่มเล่นจากท่อนที่ครอบ currentTime อยู่ หรือท่อนถัดไป ถ้าไม่มีก็ท่อนแรก
+  const t = video.currentTime;
+  let idx = state.segments.findIndex(s => t >= s.start - 0.02 && t < s.end - 0.02);
+  if (idx < 0) idx = state.segments.findIndex(s => s.start >= t - 0.02);
+  if (idx < 0) idx = 0;
+  playIdx = idx;
+  const s = state.segments[idx];
+  if (t < s.start - 0.02 || t >= s.end - 0.02) video.currentTime = s.start;
+  video.playbackRate = s.speed;
+}
+function segPlaybackTick() {
+  if (state.exporting || video.paused || video.seeking || !state.segments.length) return;
+  const s = state.segments[playIdx];
+  if (!s) { video.pause(); return; }
+  if (Math.abs(video.playbackRate - s.speed) > 1e-3) video.playbackRate = s.speed;
+  if (video.currentTime >= s.end - 0.03) {
+    const next = state.segments[playIdx + 1];
+    if (next) { playIdx++; video.currentTime = next.start; video.playbackRate = next.speed; }
+    else video.pause();
+  }
+}
+
+function updateTimelineUI() {
+  timeline.querySelectorAll('.zoom-marker').forEach(el => el.remove());
+  if (!video.duration) return;
+  for (const ev of state.events) {
+    const el = document.createElement('div');
+    normalizeEventTiming(ev);
+    el.className = 'zoom-marker' + (ev.id === state.selectedId ? ' selected' : '');
+    const dur = eventDuration(ev);
+    el.style.left = (ev.start / video.duration * 100) + '%';
+    el.style.width = (dur / video.duration * 100) + '%';
+    el.dataset.id = ev.id;
+    el.innerHTML = `<span class="z-handle left" data-edge="left"></span><span class="zlabel">${ev.zoom.toFixed(1)}x</span><span class="z-handle right" data-edge="right"></span>`;
+    timeline.appendChild(el);
+  }
+  $('zoomCount').textContent = state.events.length ? tr('zoomPoints', state.events.length) : '';
+  updateMarkerEditUI();
+  updatePlayheadUI();
+}
+
+function updateMarkerEditUI() {
+  const ev = state.events.find(e => e.id === state.selectedId);
+  const panel = $('markerEdit');
+  if (!ev) { panel.classList.remove('visible'); return; }
+  panel.classList.add('visible');
+  $('mZoom').value = ev.zoom;
+  $('mZoomVal').textContent = ev.zoom.toFixed(1) + 'x';
+  $('mIn').value = ev.tIn;
+  $('mInVal').textContent = ev.tIn.toFixed(2).replace(/0$/,'').replace(/\.0$/,'') + 's';
+  $('mHold').value = ev.hold;
+  $('mHoldVal').textContent = ev.hold.toFixed(1) + 's';
+  $('mOut').value = ev.tOut;
+  $('mOutVal').textContent = ev.tOut.toFixed(2).replace(/0$/,'').replace(/\.0$/,'') + 's';
+}
+
+$('mZoom').addEventListener('input', e => {
+  const ev = state.events.find(x => x.id === state.selectedId);
+  if (!ev) return;
+  ev.zoom = parseFloat(e.target.value);
+  $('mZoomVal').textContent = ev.zoom.toFixed(1) + 'x';
+  updateTimelineUI(); requestRender();
+});
+$('mHold').addEventListener('input', e => {
+  const ev = state.events.find(x => x.id === state.selectedId);
+  if (!ev) return;
+  ev.hold = parseFloat(e.target.value);
+  $('mHoldVal').textContent = ev.hold.toFixed(1) + 's';
+  updateTimelineUI(); requestRender();
+});
+function bindMarkerTimeSlider(id, key, valId) {
+  $(id).addEventListener('input', e => {
+    const ev = state.events.find(x => x.id === state.selectedId);
+    if (!ev) return;
+    ev[key] = parseFloat(e.target.value);
+    normalizeEventTiming(ev);
+    $(valId).textContent = ev[key].toFixed(2).replace(/0$/,'').replace(/\.0$/,'') + 's';
+    updateTimelineUI(); requestRender();
+  });
+}
+bindMarkerTimeSlider('mIn', 'tIn', 'mInVal');
+bindMarkerTimeSlider('mOut', 'tOut', 'mOutVal');
+$('mGrowL').onclick = () => {
+  const ev = state.events.find(x => x.id === state.selectedId);
+  if (!ev) return;
+  shiftEventStart(ev, ev.start - 0.25);
+  updateTimelineUI(); requestRender();
+};
+$('mGrowR').onclick = () => {
+  const ev = state.events.find(x => x.id === state.selectedId);
+  if (!ev) return;
+  setEventEnd(ev, eventEnd(ev) + 0.25);
+  updateTimelineUI(); requestRender();
+};
+$('mDelete').onclick = () => {
+  commitHistory();
+  state.events = state.events.filter(e => e.id !== state.selectedId);
+  state.selectedId = null;
+  updateTimelineUI(); requestRender();
+};
+
+// timeline interactions: click = seek, click marker = select, drag marker = move
+let dragging = null;
+timeline.addEventListener('pointerdown', e => {
+  if (!state.loaded || !video.duration) return;
+  const bounds = timeline.getBoundingClientRect();
+  const marker = e.target.closest('.zoom-marker');
+  if (marker) {
+    const id = parseInt(marker.dataset.id);
+    state.selectedId = id;
+    const ev = state.events.find(x => x.id === id);
+    const t = (e.clientX - bounds.left) / bounds.width * video.duration;
+    const edge = e.target.closest('.z-handle')?.dataset.edge || null;
+    dragging = { ev, edge, offsetT: t - ev.start, moved: false };
+    commitHistory();
+    timeline.setPointerCapture(e.pointerId);
+    updateTimelineUI();
+  } else {
+    const frac = Math.min(1, Math.max(0, (e.clientX - bounds.left) / bounds.width));
+    video.currentTime = frac * video.duration;
+  }
+});
+timeline.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const bounds = timeline.getBoundingClientRect();
+  const raw = (e.clientX - bounds.left) / bounds.width * video.duration;
+  dragging.moved = true;
+  if (dragging.edge === 'left') {
+    shiftEventStart(dragging.ev, raw);
+  } else if (dragging.edge === 'right') {
+    setEventEnd(dragging.ev, raw);
+  } else {
+    const dur = eventDuration(dragging.ev);
+    const t = raw - dragging.offsetT;
+    dragging.ev.start = Math.min(Math.max(0, video.duration - dur), Math.max(0, t));
+  }
+  state.events.sort((a, b) => a.start - b.start);
+  updateTimelineUI();
+  requestRender();
+});
+timeline.addEventListener('pointerup', () => { dragging = null; });
+
+// ---------- งานใหม่ ----------
+$('newBtn').onclick = () => {
+  if (state.loaded && !confirm(tr('newConfirm'))) return;
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  Object.assign(state, {
+    loaded: false, mode: 'video', imageEl: null,
+    events: [], taps: [], selectedId: null,
+    voiceovers: [], selectedVoiceId: null,
+    facecams: [], selectedFaceId: null,
+    segments: [], selectedSeg: null,
+    crop: { t: 0, r: 0, b: 0, l: 0 },
+    timelineZoom: 1,
+  });
+  syncCropUI();
+  canvas.style.display = 'none';
+  $('dropHint').style.display = '';
+  $('playBtn').disabled = true;
+  $('splitBtn').disabled = true;
+  $('voiceBtn').disabled = true;
+  $('exportBtn').disabled = true;
+  $('snapBtn').disabled = true;
+  $('exportBtn').textContent = tr('exportVideo');
+  $('imgExportSec').style.display = 'none';
+  document.querySelector('.timeline-area').style.display = '';
+  $('zoomCount').textContent = '';
+  $('timeLabel').textContent = '0:00.0 / 0:00.0';
+  playhead.style.left = '0';
+  $('segTrack').innerHTML = '';
+  $('voiceTrack').innerHTML = '';
+  $('cameraTrack').innerHTML = '';
+  $('ruler').innerHTML = '';
+  updateTimelineScale();
+  timeline.querySelectorAll('.zoom-marker').forEach(el => el.remove());
+  $('markerEdit').classList.remove('visible');
+  $('segEdit').classList.remove('visible');
+  $('voiceEdit').classList.remove('visible');
+  $('cameraEdit').classList.remove('visible');
+};
+
+// ---------- Export PNG (ภาพนิ่ง / เฟรมปัจจุบัน) ----------
+async function exportPNG(scale) {
+  const ow = canvas.width, oh = canvas.height;
+  canvas.width = ow * scale;
+  canvas.height = oh * scale;
+  drawFrame(true);
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  canvas.width = ow; canvas.height = oh;
+  requestRender();
+  if (!blob) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `zoomcut-${state.mode === 'image' ? 'mockup' : 'frame'}@${scale}x.png`;
+  a.click();
+}
+
+$('snapBtn').onclick = () => { if (state.loaded) exportPNG(state.exportScale); };
+
+async function prepareVoiceBuffers(audioCtx) {
+  const out = [];
+  for (const v of state.voiceovers) {
+    try {
+      const arr = await v.blob.arrayBuffer();
+      const buffer = await audioCtx.decodeAudioData(arr.slice(0));
+      out.push({ ...v, buffer });
+    } catch (e) {}
+  }
+  return out;
+}
+function getExportAudioContext() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!exportAudioCtx || exportAudioCtx.state === 'closed') exportAudioCtx = new AC();
+  return exportAudioCtx;
+}
+function getVideoAudioSource(audioCtx) {
+  if (!videoAudioSourceNode) {
+    videoAudioSourceNode = audioCtx.createMediaElementSource(video);
+    videoAudioSourceNode.connect(audioCtx.destination);
+  }
+  return videoAudioSourceNode;
+}
+function scheduleVoiceoversForSegment(audioCtx, dest, voiceBuffers, seg) {
+  const now = audioCtx.currentTime + 0.03;
+  const segOutStart = segmentOutputStart(seg);
+  const segOutEnd = segOutStart + (seg.end - seg.start) / seg.speed;
+  for (const v of voiceBuffers) {
+    const vStart = voiceOutStart(v);
+    const vEnd = vStart + voiceOutDuration(v);
+    const overlapStart = Math.max(vStart, segOutStart);
+    const overlapEnd = Math.min(vEnd, segOutEnd);
+    if (overlapEnd <= overlapStart) continue;
+    const source = audioCtx.createBufferSource();
+    source.buffer = v.buffer;
+    source.playbackRate.value = 1;
+    const gain = audioCtx.createGain();
+    gain.gain.value = 1;
+    source.connect(gain).connect(dest);
+    const when = now + (overlapStart - segOutStart);
+    const offset = Math.max(0, overlapStart - vStart);
+    const sourceDur = overlapEnd - overlapStart;
+    try { source.start(when, offset, sourceDur); } catch {}
+  }
+}
+
+// ---------- Export ----------
+$('exportBtn').onclick = async () => {
+  if (!state.loaded || state.exporting) return;
+  if (state.mode === 'image') { exportPNG(state.exportScale); return; }
+  state.exporting = true;
+  video.pause();
+  $('exportOverlay').classList.add('visible');
+  $('exportProgress').style.width = '0%';
+
+  // pick best supported container
+  const candidates = [
+    'video/mp4;codecs=avc1.640028,mp4a.40.2',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm',
+  ];
+  const mime = candidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+
+  const stream = canvas.captureStream(60);
+
+  // include original audio if present
+  let audioCtx = null;
+  let voiceBuffers = [];
+  let audioDest = null;
+  try {
+    audioCtx = getExportAudioContext();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    const src = getVideoAudioSource(audioCtx);
+    audioDest = audioCtx.createMediaStreamDestination();
+    src.connect(audioDest);
+    voiceBuffers = await prepareVoiceBuffers(audioCtx);
+    audioDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
+  } catch (err) { /* video already connected or no audio — fine */ }
+
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
+  const chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+
+  const done = new Promise(res => { rec.onstop = res; });
+
+  const segs = state.segments;
+  const totalOut = outputDuration();
+  let doneOut = 0; // ความยาว output ที่เรนเดอร์ไปแล้ว (วินาที)
+
+  const seekTo = t => new Promise(res => {
+    video.currentTime = t;
+    video.addEventListener('seeked', res, { once: true });
+  });
+
+  await seekTo(segs[0].start);
+  rec.start(250);
+
+  // ไล่เรนเดอร์ทีละท่อน ข้ามช่องที่ถูกตัด
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    if (Math.abs(video.currentTime - s.start) > 0.05) await seekTo(s.start);
+    video.playbackRate = s.speed;
+    if (audioCtx && audioDest && voiceBuffers.length) scheduleVoiceoversForSegment(audioCtx, audioDest, voiceBuffers, s);
+    await video.play();
+    const segBase = doneOut;
+    // ใช้ทั้ง rAF (ลื่นตอนแท็บ active) และ setInterval (ทำงานต่อแม้สลับแท็บ) เป็น backup
+    await new Promise(res => {
+      let finished = false;
+      const finish = () => { if (finished) return; finished = true; clearInterval(iv); res(); };
+      const check = () => {
+        if (finished) return;
+        if (video.ended || video.currentTime >= s.end - 0.02) return finish();
+        doneOut = segBase + (video.currentTime - s.start) / s.speed;
+        const p = Math.min(100, doneOut / totalOut * 100);
+        $('exportProgress').style.width = p + '%';
+        $('exportSub').textContent =
+          tr('exportSegment', i + 1, segs.length, fmtTime(doneOut), fmtTime(totalOut), s.speed);
+        if (!finished) requestAnimationFrame(check);
+      };
+      const iv = setInterval(check, 200);
+      requestAnimationFrame(check);
+    });
+    video.pause();
+    doneOut = segBase + (s.end - s.start) / s.speed;
+  }
+
+  rec.stop();
+  await done;
+
+  let blob = new Blob(chunks, { type: mime });
+  let outExt = ext;
+  // แปลงผ่าน ffmpeg ในแอป (ถ้ามี) → MP4 frame rate คงที่ กันไฟล์ค้าง/เปิดได้แค่ช่วงแรก
+  try {
+    $('exportSub').textContent = tr('exportRemuxing');
+    const rr = await fetch('/api/remux?ext=' + ext, {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob,
+    });
+    if (rr.ok) { blob = await rr.blob(); outExt = 'mp4'; }
+  } catch (e) { /* เว็บ (ไม่มี ffmpeg) → ใช้ไฟล์เดิม */ }
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `zoomcut-export.${outExt}`;
+  a.click();
+
+  $('exportOverlay').classList.remove('visible');
+  state.exporting = false;
+  if (videoAudioSourceNode && audioDest) {
+    try { videoAudioSourceNode.disconnect(audioDest); } catch {}
+  }
+  requestRender();
+};
+
+// ---------- อัดหน้าจอ iPhone จากปุ่มในแอป (ผ่าน serve.py) ----------
+const recBtn = $('recBtn');
+let recState = { recording: false, poller: null };
+
+$('themeBtn').onclick = () => {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('zoomcut-theme', state.theme);
+  applyTheme();
+  requestRender();
+};
+$('langSel').onchange = e => {
+  state.lang = e.target.value;
+  localStorage.setItem('zoomcut-lang', state.lang);
+  applyLanguage();
+  refreshMicDevices();
+};
+applyTheme();
+applyLanguage();
+
+function applyStoredPanelSizes() {
+  const sidebarW = parseFloat(localStorage.getItem('zoomcut-sidebar-width')) || 260;
+  const timelineH = parseFloat(localStorage.getItem('zoomcut-timeline-height')) || 190;
+  document.querySelector('.sidebar').style.width = clamp(sidebarW, 180, 460) + 'px';
+  document.querySelector('.timeline-area').style.height = clamp(timelineH, 118, window.innerHeight * 0.45) + 'px';
+}
+function initSplitters() {
+  const sidebar = document.querySelector('.sidebar');
+  const timelineArea = document.querySelector('.timeline-area');
+  const sideSplit = $('sidebarSplitter');
+  const timeSplit = $('timelineSplitter');
+  sideSplit.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    document.body.classList.add('resizing');
+    sideSplit.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = sidebar.getBoundingClientRect().width;
+    const move = ev => {
+      const next = clamp(startW + ev.clientX - startX, 180, Math.min(520, window.innerWidth * 0.38));
+      sidebar.style.width = next + 'px';
+      localStorage.setItem('zoomcut-sidebar-width', String(Math.round(next)));
+      requestRender();
+    };
+    const up = () => {
+      document.body.classList.remove('resizing');
+      sideSplit.removeEventListener('pointermove', move);
+      sideSplit.removeEventListener('pointerup', up);
+      sideSplit.removeEventListener('pointercancel', up);
+    };
+    sideSplit.addEventListener('pointermove', move);
+    sideSplit.addEventListener('pointerup', up);
+    sideSplit.addEventListener('pointercancel', up);
+  });
+  timeSplit.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    document.body.classList.add('resizing');
+    timeSplit.setPointerCapture(e.pointerId);
+    const startY = e.clientY;
+    const startH = timelineArea.getBoundingClientRect().height;
+    const wrapH = document.querySelector('.stage-wrap').getBoundingClientRect().height;
+    const move = ev => {
+      const next = clamp(startH + startY - ev.clientY, 118, Math.max(160, wrapH * 0.58));
+      timelineArea.style.height = next + 'px';
+      localStorage.setItem('zoomcut-timeline-height', String(Math.round(next)));
+      requestRender();
+    };
+    const up = () => {
+      document.body.classList.remove('resizing');
+      timeSplit.removeEventListener('pointermove', move);
+      timeSplit.removeEventListener('pointerup', up);
+      timeSplit.removeEventListener('pointercancel', up);
+    };
+    timeSplit.addEventListener('pointermove', move);
+    timeSplit.addEventListener('pointerup', up);
+    timeSplit.addEventListener('pointercancel', up);
+  });
+}
+applyStoredPanelSizes();
+initSplitters();
+window.addEventListener('resize', applyStoredPanelSizes);
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return { ok: r.ok, data: await r.json().catch(() => ({})) };
+}
+
+function showActionableError(message) {
+  alert(String(message || 'เกิดข้อผิดพลาด')
+    + tr('actionableSuffix'));
+}
+
+function diagItem(ok, name, detail) {
+  return `<div class="diag-item"><div>${ok ? '✅' : '⚠️'}</div><div><div class="name">${name}</div><div class="detail">${String(detail || '').replace(/</g, '&lt;')}</div></div></div>`;
+}
+async function openDiagnostics() {
+  const list = $('diagList');
+  $('diagOverlay').classList.add('visible');
+  list.innerHTML = diagItem(true, state.lang === 'th' ? 'กำลังตรวจระบบ' : 'Checking system', state.lang === 'th' ? 'กำลังโหลด diagnostics จากแอป...' : 'Loading diagnostics from the app...');
+  const { ok, data } = await api('/api/diagnostics');
+  if (!ok) {
+    list.innerHTML = diagItem(false, state.lang === 'th' ? 'Diagnostics ใช้ไม่ได้' : 'Diagnostics unavailable', state.lang === 'th' ? 'เปิดผ่านเว็บ static อยู่ หรือ server ในแอปยังไม่พร้อม' : 'You may be running the static web editor or the app server is not ready.');
+    return;
+  }
+  const bins = data.bins || {};
+  list.innerHTML = [
+    diagItem(true, 'Runtime', `${data.platform}/${data.arch} • Node ${data.node}`),
+    diagItem(bins.ffmpeg && bins.ffmpeg.ok, 'ffmpeg', bins.ffmpeg && `${bins.ffmpeg.path} — ${bins.ffmpeg.detail}`),
+    diagItem(bins.ffprobe && bins.ffprobe.ok, 'ffprobe', bins.ffprobe && `${bins.ffprobe.path} — ${bins.ffprobe.detail}`),
+    diagItem(bins.screencapture && bins.screencapture.ok, 'Screen Recording backend', bins.screencapture && `${bins.screencapture.path} — ${bins.screencapture.detail || (state.lang === 'th' ? 'พร้อมเรียก screencapture' : 'Ready to call screencapture')}`),
+    diagItem(data.uiohook && data.uiohook.ok, 'Click hook', data.uiohook && data.uiohook.detail),
+    diagItem((data.sources && data.sources.displays > 0), 'Display/window list', state.lang === 'th'
+      ? `${data.sources?.displays || 0} จอ • ${data.sources?.windows || 0} หน้าต่าง${data.sources?.windowsError ? ' — ' + data.sources.windowsError : ''}`
+      : `${data.sources?.displays || 0} displays • ${data.sources?.windows || 0} windows${data.sources?.windowsError ? ' — ' + data.sources.windowsError : ''}`),
+    diagItem(true, 'Debug log', data.debugLog || '/tmp/zoomcut-debug.log'),
+  ].join('');
+  $('diagTip').textContent = state.lang === 'th'
+    ? 'macOS permission บางอย่างตรวจแบบ 100% ไม่ได้จากเว็บ renderer: ถ้าอัดไม่ได้ ให้เปิด Screen Recording, Microphone และ Input Monitoring/Accessibility ให้ ZoomCut แล้ว restart แอป'
+    : 'Some macOS permissions cannot be verified perfectly from the renderer. If recording fails, enable Screen Recording, Microphone, and Input Monitoring/Accessibility for ZoomCut, then restart the app.';
+}
+$('diagBtn').onclick = openDiagnostics;
+$('diagClose').onclick = () => $('diagOverlay').classList.remove('visible');
+$('diagOverlay').addEventListener('click', e => { if (e.target === $('diagOverlay')) $('diagOverlay').classList.remove('visible'); });
+
+// แสดงปุ่มเฉพาะเมื่อรันผ่าน serve.py (มี API)
+(async () => {
+  try {
+    const { ok } = await api('/api/record/state');
+    if (ok) { recBtn.style.display = ''; $('diagBtn').style.display = ''; }
+  } catch {}
+})();
+
+recBtn.onclick = async () => {
+  if (recState.recording) {
+    recBtn.textContent = tr('recStopping');
+    await api('/api/record/stop', { method: 'POST' });
+    return;
+  }
+  openSourcePicker();
+};
+
+// ---------- หน้าเลือกแหล่งอัด (แบบแชร์จอ meeting) ----------
+const APP_ICONS = {
+  'google chrome': '🌐', 'safari': '🧭', 'firefox': '🦊', 'arc': '🌐',
+  'microsoft edge': '🌐', 'brave browser': '🦁', 'iphone mirroring': '📱',
+  'finder': '📁', 'terminal': '⬛', 'code': '💻', 'visual studio code': '💻',
+  'notes': '📝', 'keynote': '📊', 'figma': '🎨', 'slack': '💬',
+};
+function appIcon(app) { return APP_ICONS[app.toLowerCase()] || '🪟'; }
+
+async function openSourcePicker() {
+  const list = $('pickerList');
+  list.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px">${state.lang === 'th' ? 'กำลังโหลดรายชื่อหน้าต่าง...' : 'Loading windows...'}</div>`;
+  $('pickerOverlay').classList.add('visible');
+
+  const { ok, data } = await api('/api/windows');
+  list.innerHTML = '';
+
+  const addItem = (icon, name, detail, target) => {
+    const el = document.createElement('button');
+    el.className = 'picker-item';
+    el.innerHTML = `<span class="icon">${icon}</span><span class="info">
+      <div class="name">${String(name).replace(/</g, '&lt;')}</div>
+      <div class="detail">${String(detail).replace(/</g, '&lt;')}</div></span>`;
+    el.onclick = () => startRecording(target);
+    list.appendChild(el);
+  };
+
+  // ตัวเลือก iPhone อยู่บนสุดเสมอ (เปิด iPhone Mirroring ให้เองถ้ายังไม่เปิด)
+  addItem('📱', 'iPhone', state.lang === 'th' ? 'อัดหน้าจอ iPhone ผ่าน iPhone Mirroring — เปิดแอปให้อัตโนมัติ' : 'Record iPhone via iPhone Mirroring. ZoomCut will open it if needed.', {});
+
+  if (ok) {
+    // ทั้งหน้าจอ (แต่ละจอ)
+    for (const d of data.displays || []) {
+      const label = state.lang === 'th'
+        ? (data.displays.length > 1 ? `ทั้งหน้าจอ — ${d.name}` : 'ทั้งหน้าจอ') + (d.isMain ? ' (จอหลัก)' : '')
+        : (data.displays.length > 1 ? `Entire screen — ${d.name}` : 'Entire screen') + (d.isMain ? ' (main)' : '');
+      addItem('🖥', label, state.lang === 'th' ? `เดสก์ท็อปทั้งจอ • ${d.w}×${d.h}` : `Full desktop • ${d.w}×${d.h}`, { screenIndex: d.index });
+    }
+    // หน้าต่างเดี่ยว
+    for (const w of data.windows || []) {
+      addItem(appIcon(w.app), w.title || w.app, `${w.app} • ${w.w}×${w.h}`, { windowId: w.id });
+    }
+  }
+}
+$('pickerCancel').onclick = () => $('pickerOverlay').classList.remove('visible');
+$('pickerOverlay').addEventListener('click', e => {
+  if (e.target === $('pickerOverlay')) $('pickerOverlay').classList.remove('visible');
+});
+
+async function startRecording(target) {
+  $('pickerOverlay').classList.remove('visible');
+  const { ok, data } = await api('/api/record/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(target),
+  });
+  if (!ok) { showActionableError(data.error || (state.lang === 'th' ? 'เริ่มอัดไม่ได้' : 'Could not start recording')); return; }
+  recState.recording = true;
+  recBtn.classList.add('recording');
+  recBtn.textContent = tr('recStarting');
+  recState.poller = setInterval(pollRecState, 1000);
+}
+
+async function pollRecState() {
+  const { ok, data } = await api('/api/record/state');
+  if (!ok) return;
+  if (data.running) {
+    const secs = Math.max(0, Math.floor(Date.now() / 1000 - data.started));
+    const mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
+    recBtn.textContent = `${state.lang === 'th' ? '⏹ หยุดอัด' : '⏹ Stop'} ${mm}:${ss} • 👆${data.clicks}`;
+    recBtn.title = 'คีย์ลัดหยุดอัดทั้งจอ: ⌃⌘S (Control-Command-S)';
+    return;
+  }
+  // ยังไม่ถึงสถานะจบ (finished/error) → ต้องรอต่อ ห้ามหยุด poll
+  // (บั๊กเดิม: running เป็น false ก่อน finished เป็น true → หยุด poll ก่อนวิดีโอพร้อม → วิดีโอไม่กลับเข้า editor)
+  if (!data.finished && !data.error) {
+    recBtn.classList.remove('recording');
+    recBtn.textContent = data.processing ? tr('recProcessing') : tr('recStarting');
+    return; // poll ต่อไป
+  }
+  // จบจริง (finished หรือ error)
+  clearInterval(recState.poller);
+  recState.recording = false;
+  recBtn.classList.remove('recording');
+  recBtn.textContent = tr('record');
+  if (data.error) {
+    showActionableError((state.lang === 'th' ? 'อัดไม่สำเร็จ:\n' : 'Recording failed:\n') + data.error);
+    return;
+  }
+  if (data.finished && data.base) loadFromServer(data.base);
+}
+
+async function loadFromServer(base) {
+  // รองรับทั้ง "recordings/recording-xxx" (autoload) และ "recording-xxx" (จากสถานะอัด)
+  const p = base.includes('/') ? base : 'recordings/' + base;
+  try {
+    const vr = await fetch('/' + p + '.mp4');
+    if (!vr.ok) { alert((state.lang === 'th' ? 'โหลดวิดีโอไม่สำเร็จ' : 'Could not load video') + ' (' + vr.status + ') — ' + p + '.mp4'); return; }
+    const vfile = new File([await vr.blob()], p.split('/').pop() + '.mp4', { type: 'video/mp4' });
+    const jr = await fetch('/' + p + '.clicks.json');
+    const jfile = jr.ok ? new File([await jr.blob()], 'clicks.json') : null;
+    loadFile(vfile, jfile);
+  } catch (e) { alert((state.lang === 'th' ? 'โหลดวิดีโอผิดพลาด: ' : 'Video load error: ') + e.message); }
+}
+
+// เปิดจาก record.py โดยตรง: ?autoload=recordings/recording-xxx
+const autoBase = new URLSearchParams(location.search).get('autoload');
+if (autoBase && /^recordings\/[\w.-]+$/.test(autoBase)) loadFromServer(autoBase);
+</script>
+</body>
+</html>

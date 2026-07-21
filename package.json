@@ -1,0 +1,45 @@
+{
+  "name": "zoomcut",
+  "version": "0.1.0-beta.1",
+  "description": "ZoomCut — screen recorder with automatic zoom-to-click, plus editor",
+  "author": "ZoomCut",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w uiohook-napi",
+    "postinstall": "electron-rebuild -f -w uiohook-napi || true",
+    "dist:mac": "electron-builder --mac dmg",
+    "server": "node electron/server.js",
+    "test": "node test/coordinate-math.test.js"
+  },
+  "build": {
+    "appId": "com.zoomcut.app",
+    "productName": "ZoomCut",
+    "files": [
+      "electron/**/*",
+      "index.html"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.video",
+      "identity": null,
+      "darkModeSupport": true,
+      "extendInfo": {
+        "NSCameraUsageDescription": "ZoomCut ใช้กล้องสำหรับเว็บแคม overlay",
+        "NSMicrophoneUsageDescription": "ZoomCut ใช้ไมโครโฟนสำหรับบันทึกเสียง",
+        "NSScreenCaptureUsageDescription": "ZoomCut ต้องการสิทธิ์อัดหน้าจอเพื่อบันทึกหน้าต่าง"
+      }
+    },
+    "dmg": {
+      "title": "ZoomCut ${version}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "@electron/rebuild": "^3.7.0"
+  },
+  "optionalDependencies": {
+    "uiohook-napi": "^1.5.4"
+  }
+}

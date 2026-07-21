@@ -1,0 +1,27 @@
+#!/bin/bash
+# Build + เซ็นด้วย self-signed cert ที่ identity คงที่ + ทำ DMG
+# ใช้ cert เดิมทุกครั้ง → สิทธิ์ Screen Recording/Input Monitoring ไม่หลุดเวลาอัปเดต
+set -e
+cd "$(dirname "$0")/.."
+
+IDENTITY="ZoomCut Beta Self-Signed"
+VERSION=$(node -p "require('./package.json').version")
+DMG="dist/ZoomCut-${VERSION}-arm64.dmg"
+
+echo "▶ building…"
+npm run dist:mac >/dev/null 2>&1 || npm run dist:mac
+
+echo "▶ signing with stable identity: $IDENTITY"
+codesign --deep --force --sign "$IDENTITY" "dist/mac-arm64/ZoomCut.app"
+codesign --verify --deep --strict "dist/mac-arm64/ZoomCut.app"
+
+echo "▶ packaging DMG…"
+rm -f "$DMG"*
+STAGE=$(mktemp -d)
+cp -R "dist/mac-arm64/ZoomCut.app" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname "ZoomCut" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$STAGE"
+
+echo "✅ $DMG"
+codesign -d --requirements - "dist/mac-arm64/ZoomCut.app" 2>&1 | grep designated || true

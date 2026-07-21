@@ -1,0 +1,16 @@
+# deploy เฉพาะตัวแก้ไขในเบราว์เซอร์ (index.html) — ไม่เอาไฟล์ local/ส่วนตัว/แอป desktop ขึ้นเน็ต
+record.py
+serve.py
+*.command
+recordings/
+__pycache__/
+.claude/
+electron/
+node_modules/
+package.json
+package-lock.json
+dist/
+.env.local
+
+# dev docs — ไม่ต้องขึ้นเว็บ
+HANDOFF.md
