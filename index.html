@@ -226,9 +226,11 @@
     min-width: 100%;
     transition: width .15s;
   }
+  .lane-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-left: 82px; flex-wrap: wrap; }
   .lane-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; }
   .lane-label { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
   .lane-row .seg-track, .lane-row .voice-track, .lane-row .camera-track { margin-top: 0; }
+  .track-group { display: grid; gap: 0; }
   .timeline {
     position: relative;
     height: 46px;
@@ -475,6 +477,14 @@
   .marker-edit label { color: var(--muted); }
   .marker-edit input[type=range] { width: 90px; accent-color: var(--accent); vertical-align: middle; }
   .marker-edit .val { font-variant-numeric: tabular-nums; display: inline-block; width: 36px; }
+  .panel-close {
+    margin-left: auto;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    line-height: 1;
+  }
   .btn.small { padding: 4px 10px; font-size: 12px; }
   .btn.danger { border-color: rgba(255,92,122,.4); color: var(--danger); }
   .btn.danger:hover { background: rgba(255,92,122,.1); }
@@ -830,13 +840,19 @@
           <div class="timeline" id="timeline">
             <div class="playhead" id="playhead" style="left:0"></div>
           </div>
-          <div class="lane-row"><div class="lane-label" id="videoLaneLabel">Video</div><div class="seg-track" id="segTrack"></div></div>
-          <div class="lane-row"><div class="lane-label" id="voiceLaneLabel">Voice</div><div class="voice-track" id="voiceTrack"></div></div>
-          <div class="lane-row"><div class="lane-label" id="cameraLaneLabel">Camera</div><div class="camera-track" id="cameraTrack"></div></div>
+          <div class="lane-actions">
+            <button class="btn small" id="addVideoLane">+ Video lane</button>
+            <button class="btn small" id="addVoiceLane">+ Voice lane</button>
+            <button class="btn small" id="addCameraLane">+ Camera lane</button>
+          </div>
+          <div class="track-group" id="videoTrackGroup"></div>
+          <div class="track-group" id="voiceTrackGroup"></div>
+          <div class="track-group" id="cameraTrackGroup"></div>
         </div>
       </div>
       <div class="marker-edit" id="cameraEdit">
         <span id="cameraEditLabel">📷 Camera overlay</span>
+        <span><label>Lane </label><select class="speed-select" id="cameraLane"></select></span>
         <span><label>Position </label>
           <select class="speed-select" id="camPos">
             <option value="bottom-right">Bottom right</option>
@@ -857,13 +873,17 @@
         <span><label>Fade in </label><input type="range" id="camFadeIn" min="0" max="2" step="0.1"> <span class="val" id="camFadeInVal">0.3s</span></span>
         <span><label>Fade out </label><input type="range" id="camFadeOut" min="0" max="2" step="0.1"> <span class="val" id="camFadeOutVal">0.3s</span></span>
         <button class="btn small danger" id="cameraDelete">🗑 Delete camera</button>
+        <button class="btn small panel-close" id="cameraClose" title="Close">×</button>
       </div>
       <div class="marker-edit" id="voiceEdit">
         <span id="voiceEditLabel">🎙 Voice over</span>
+        <span><label>Lane </label><select class="speed-select" id="voiceLane"></select></span>
         <button class="btn small danger" id="voiceDelete">🗑 ลบเสียงนี้</button>
+        <button class="btn small panel-close" id="voiceClose" title="Close">×</button>
       </div>
       <div class="marker-edit" id="segEdit">
         <span id="segEditLabel">🎞 ท่อนที่เลือก</span>
+        <span><label>Lane </label><select class="speed-select" id="segLane"></select></span>
         <span><label>ความเร็ว </label>
           <select class="speed-select" id="segSpeed">
             <option value="0.25">0.25x</option>
@@ -877,6 +897,7 @@
           </select>
         </span>
         <button class="btn small danger" id="segDelete">🗑 ตัดท่อนนี้ออก</button>
+        <button class="btn small panel-close" id="segClose" title="Close">×</button>
       </div>
       <div class="marker-edit" id="markerEdit">
         <span>🔍 Zoom marker</span>
@@ -887,6 +908,7 @@
         <button class="btn small" id="mGrowL" title="ขยายช่วงซูมไปทางซ้าย 0.25 วิ">← ขยาย</button>
         <button class="btn small" id="mGrowR" title="ขยายช่วงซูมไปทางขวา 0.25 วิ">ขยาย →</button>
         <button class="btn small danger" id="mDelete">🗑 ลบ</button>
+        <button class="btn small panel-close" id="markerClose" title="Close">×</button>
       </div>
     </div>
   </div>
@@ -967,14 +989,14 @@ const state = {
   defHold: 1.0,
   zoomStyle: 'subtle',
   exportScale: 2,
-  segments: [],    // {id, start, end, speed} — ท่อนที่เก็บไว้ (ช่องว่างระหว่างท่อน = ถูกตัดออก)
+  segments: [],    // {id, start, end, speed, lane} — ท่อนที่เก็บไว้ (ช่องว่างระหว่างท่อน = ถูกตัดออก)
   selectedSeg: null,
   events: [],      // {id, start, x, y, zoom, tIn, hold, tOut}
   selectedId: null,
-  voiceovers: [],  // {id, start, duration, blob, url, name}
+  voiceovers: [],  // {id, start, duration, blob, url, name, lane}
   selectedVoiceId: null,
   selectedMicId: localStorage.getItem('zoomcut-mic') || '',
-  facecams: [],    // {id, outStart, outDuration, blob, url, fadeIn, fadeOut, video}
+  facecams: [],    // {id, outStart, outDuration, blob, url, fadeIn, fadeOut, video, lane}
   selectedFaceId: null,
   selectedCamId: localStorage.getItem('zoomcut-camera') || '',
   recordCamera: localStorage.getItem('zoomcut-record-camera') === '1',
@@ -982,6 +1004,9 @@ const state = {
   theme: localStorage.getItem('zoomcut-theme') || 'dark',
   lang: localStorage.getItem('zoomcut-lang') || 'th',
   timelineZoom: 1,
+  videoLaneCount: 1,
+  voiceLaneCount: 1,
+  cameraLaneCount: 1,
   exporting: false,
 };
 let nextId = 1;
@@ -1055,6 +1080,11 @@ const I18N = {
     camOn: '📷 กล้อง', camOff: '📷 ปิดกล้อง', cameraClip: n => `กล้อง ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 ลบกล้อง', fadeIn: 'Fade in', fadeOut: 'Fade out',
     videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
+    addVideoLane: '+ เลนวิดีโอ', addVoiceLane: '+ เลนเสียง', addCameraLane: '+ เลนกล้อง',
+    lane: 'เลน', closePanel: 'ปิดเมนูแก้ไข',
+    confirmDeleteSegment: 'ลบท่อนวิดีโอนี้ออกใช่ไหม?',
+    confirmDeleteVoice: 'ลบเสียง voice over นี้ใช่ไหม?',
+    confirmDeleteCamera: 'ลบคลิปกล้องนี้ใช่ไหม?',
     micPermission: 'เปิดไมโครโฟนไม่ได้ — ตรวจสิทธิ์ Microphone ให้ ZoomCut',
     promptCancel: 'ยกเลิก', promptOk: 'ตกลง', presetPlaceholder: '— เลือก preset —',
     newConfirm: 'เริ่มงานชิ้นใหม่? งานปัจจุบัน (วิดีโอ จุดซูม trim) จะถูกล้างทั้งหมด',
@@ -1096,6 +1126,11 @@ const I18N = {
     camOn: '📷 Camera', camOff: '📷 Camera off', cameraClip: n => `Camera ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 Delete camera', fadeIn: 'Fade in', fadeOut: 'Fade out',
     videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
+    addVideoLane: '+ Video lane', addVoiceLane: '+ Voice lane', addCameraLane: '+ Camera lane',
+    lane: 'Lane', closePanel: 'Close edit panel',
+    confirmDeleteSegment: 'Delete this video segment?',
+    confirmDeleteVoice: 'Delete this voiceover clip?',
+    confirmDeleteCamera: 'Delete this camera clip?',
     micPermission: 'Cannot open microphone. Check ZoomCut Microphone permission.',
     promptCancel: 'Cancel', promptOk: 'OK', presetPlaceholder: '— Select preset —',
     newConfirm: 'Start a new project? The current video, zoom points, and trims will be cleared.',
@@ -1120,6 +1155,9 @@ function stateSnapshot() {
     facecams: state.facecams.map(v => ({ ...v })),
     selectedFaceId: state.selectedFaceId,
     crop: { ...state.crop },
+    videoLaneCount: state.videoLaneCount,
+    voiceLaneCount: state.voiceLaneCount,
+    cameraLaneCount: state.cameraLaneCount,
   };
 }
 function restoreSnapshot(s) {
@@ -1132,6 +1170,9 @@ function restoreSnapshot(s) {
   state.facecams = (s.facecams || []).map(x => ({ ...x }));
   state.selectedFaceId = s.selectedFaceId || null;
   state.crop = { ...s.crop };
+  state.videoLaneCount = s.videoLaneCount || 1;
+  state.voiceLaneCount = s.voiceLaneCount || 1;
+  state.cameraLaneCount = s.cameraLaneCount || 1;
   syncCropUI();
   updateSegUI();
   updateTimelineUI();
@@ -1167,6 +1208,42 @@ function updateTimelineScale(anchorFrac = null) {
     vp.scrollLeft = Math.max(0, vp.scrollWidth * anchorFrac - before);
   });
 }
+function clearSelection() {
+  state.selectedSeg = null;
+  state.selectedId = null;
+  state.selectedVoiceId = null;
+  state.selectedFaceId = null;
+  updateSegUI();
+  updateTimelineUI();
+  updateVoiceUI();
+  updateCameraUI();
+}
+function selectOnly(kind, id) {
+  state.selectedSeg = kind === 'seg' ? id : null;
+  state.selectedId = kind === 'marker' ? id : null;
+  state.selectedVoiceId = kind === 'voice' ? id : null;
+  state.selectedFaceId = kind === 'camera' ? id : null;
+  if (kind !== 'seg') $('segEdit').classList.remove('visible');
+  if (kind !== 'marker') $('markerEdit').classList.remove('visible');
+  if (kind !== 'voice') $('voiceEdit').classList.remove('visible');
+  if (kind !== 'camera') $('cameraEdit').classList.remove('visible');
+}
+function renderLaneOptions(select, count, selected, labelKey) {
+  select.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `${tr(labelKey)} ${i + 1}`;
+    if (i === selected) opt.selected = true;
+    select.appendChild(opt);
+  }
+}
+function laneFromPoint(groupId, trackClass, x, y) {
+  const el = document.elementFromPoint(x, y);
+  const track = el?.closest?.(`.${trackClass}`);
+  if (!track || !$(groupId).contains(track)) return null;
+  return parseInt(track.dataset.lane || '0', 10);
+}
 function applyLanguage() {
   $('langSel').value = state.lang;
   $('appHint').textContent = tr('hint');
@@ -1198,6 +1275,7 @@ function applyLanguage() {
     ['#mGrowL', 'growLeft'], ['#mGrowR', 'growRight'], ['#mDelete', 'delete'],
     ['#pickerOverlay h2', 'pickerTitle'], ['#pickerOverlay .sub', 'pickerSub'], ['#pickerCancel', 'cancel'],
     ['#diagOverlay h2', 'diagTitle'], ['#diagClose', 'close'], ['#exportOverlay h2', 'exportTitle'],
+    ['#addVideoLane', 'addVideoLane'], ['#addVoiceLane', 'addVoiceLane'], ['#addCameraLane', 'addCameraLane'],
   ];
   for (const [sel, key] of textMap) {
     const el = document.querySelector(sel);
@@ -1227,9 +1305,13 @@ function applyLanguage() {
   $('micSel').title = state.lang === 'th' ? 'เลือกไมโครโฟน' : 'Choose microphone';
   $('camSel').title = state.lang === 'th' ? 'เลือกกล้อง' : 'Choose camera';
   $('cameraDelete').textContent = tr('cameraDelete');
-  $('videoLaneLabel').textContent = tr('videoLane');
-  $('voiceLaneLabel').textContent = tr('voiceLane');
-  $('cameraLaneLabel').textContent = tr('cameraLane');
+  document.querySelectorAll('[data-lane-base="video"]').forEach((el, i) => el.textContent = `${tr('videoLane')} ${i + 1}`);
+  document.querySelectorAll('[data-lane-base="voice"]').forEach((el, i) => el.textContent = `${tr('voiceLane')} ${i + 1}`);
+  document.querySelectorAll('[data-lane-base="camera"]').forEach((el, i) => el.textContent = `${tr('cameraLane')} ${i + 1}`);
+  document.querySelectorAll('.panel-close').forEach(btn => btn.title = tr('closePanel'));
+  document.querySelectorAll('#segEdit label, #voiceEdit label, #cameraEdit label').forEach(label => {
+    if (label.closest('span')?.querySelector('#segLane, #voiceLane, #cameraLane')) label.textContent = tr('lane') + ' ';
+  });
   const camPanel = document.querySelector('#cameraEdit > span:first-child');
   if (camPanel) camPanel.textContent = tr('cameraOverlay');
   const fadeLabels = [['camFadeIn', 'fadeIn'], ['camFadeOut', 'fadeOut']];
@@ -1600,6 +1682,9 @@ function loadImage(file) {
     state.selectedVoiceId = null;
     state.facecams = [];
     state.selectedFaceId = null;
+    state.videoLaneCount = 1;
+    state.voiceLaneCount = 1;
+    state.cameraLaneCount = 1;
     state.selectedId = null;
     state.crop = { t: 0, r: 0, b: 0, l: 0 };
     syncCropUI();
@@ -1623,6 +1708,9 @@ function loadFile(file, clicksFile) {
     state.selectedVoiceId = null;
     state.facecams = [];
     state.selectedFaceId = null;
+    state.videoLaneCount = 1;
+    state.voiceLaneCount = 1;
+    state.cameraLaneCount = 1;
     state.selectedId = null;
     state.crop = { t: 0, r: 0, b: 0, l: 0 };
     syncCropUI();
@@ -2167,7 +2255,7 @@ canvas.addEventListener('click', e => {
   commitHistory();
   state.events.push(ev);
   state.events.sort((a, b) => a.start - b.start);
-  state.selectedId = ev.id;
+  selectOnly('marker', ev.id);
   updateTimelineUI();
   requestRender();
 });
@@ -2235,6 +2323,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     $('shortcutOverlay').classList.remove('visible');
     $('diagOverlay').classList.remove('visible');
+    clearSelection();
     return;
   }
   if (!state.loaded || state.mode !== 'video') return;
@@ -2258,13 +2347,12 @@ document.addEventListener('keydown', e => {
   if (!mod && key === 'a') {
     e.preventDefault();
     const s = segAt(video.currentTime);
-    if (s) { state.selectedSeg = s.id; updateSegUI(); }
+    if (s) { selectOnly('seg', s.id); updateSegUI(); }
     return;
   }
   if (!mod && key === 'v') {
     e.preventDefault();
-    state.selectedSeg = null; state.selectedId = null; state.selectedVoiceId = null; state.selectedFaceId = null;
-    updateSegUI(); updateTimelineUI(); updateVoiceUI(); updateCameraUI();
+    clearSelection();
     return;
   }
   if (e.key === 'Home') { e.preventDefault(); video.currentTime = 0; return; }
@@ -2277,6 +2365,9 @@ document.addEventListener('keydown', e => {
 // ---------- Timeline ----------
 const timeline = $('timeline');
 const playhead = $('playhead');
+$('stage').addEventListener('pointerdown', e => {
+  if (e.target === $('stage') || e.target === $('dropHint')) clearSelection();
+});
 const voiceRec = {
   active: false, recorder: null, stream: null, chunks: [], start: 0, startedAt: 0,
   camChunks: [], camRecorder: null, camStream: null,
@@ -2445,6 +2536,7 @@ async function startVoiceover() {
       outStart: Math.min(outputDuration() - 0.1, Math.max(0, voiceRec.start)),
       outDuration: Math.min(duration, Math.max(0.1, outputDuration() - voiceRec.start)),
       blob, url, peaks,
+      lane: 0,
       name: tr('voiceClip', voiceId - 1),
       audio: new Audio(url),
     });
@@ -2477,6 +2569,7 @@ async function startVoiceover() {
           outDuration: Math.min(outDuration, Math.max(0.1, outputDuration() - voiceRec.start)),
           mediaOffset: 0,
           blob, url, video: v,
+          lane: 0,
           fadeIn: state.camDefaults.fadeIn, fadeOut: state.camDefaults.fadeOut,
           pos: state.camDefaults.pos, shape: state.camDefaults.shape, size: state.camDefaults.size, margin: state.camDefaults.margin,
           name: tr('cameraClip', faceId - 1),
@@ -2503,59 +2596,75 @@ function stopVoiceover() {
 $('voiceBtn').onclick = () => voiceRec.active ? stopVoiceover() : startVoiceover();
 
 function updateVoiceUI() {
-  const track = $('voiceTrack');
-  track.innerHTML = '';
+  const group = $('voiceTrackGroup');
+  group.innerHTML = '';
   if (!video.duration) return;
-  for (const v of state.voiceovers) {
-    const el = document.createElement('div');
-    const outStart = voiceOutStart(v);
-    const outEnd = outStart + voiceOutDuration(v);
-    const sourceStart = outputToSourceTime(outStart);
-    const sourceEnd = outputToSourceTime(outEnd);
-    el.className = 'voice-clip' + (v.id === state.selectedVoiceId ? ' selected' : '');
-    el.dataset.id = v.id;
-    el.style.left = (sourceStart / video.duration * 100) + '%';
-    el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
-    el.innerHTML = `<span class="clip-handle left" data-edge="left"></span>${waveformHtml(v.peaks)}<span class="voice-label">${v.name || tr('voiceClip', v.id)}</span><span class="clip-handle right" data-edge="right"></span>`;
-    track.appendChild(el);
+  const needed = Math.max(1, state.voiceLaneCount, ...state.voiceovers.map(v => (v.lane || 0) + 1));
+  state.voiceLaneCount = needed;
+  for (let lane = 0; lane < needed; lane++) {
+    const row = document.createElement('div');
+    row.className = 'lane-row';
+    row.innerHTML = `<div class="lane-label" data-lane-base="voice">${tr('voiceLane')} ${lane + 1}</div><div class="voice-track" data-lane="${lane}"></div>`;
+    const track = row.querySelector('.voice-track');
+    for (const v of state.voiceovers.filter(x => (x.lane || 0) === lane)) {
+      const el = document.createElement('div');
+      const outStart = voiceOutStart(v);
+      const outEnd = outStart + voiceOutDuration(v);
+      const sourceStart = outputToSourceTime(outStart);
+      const sourceEnd = outputToSourceTime(outEnd);
+      el.className = 'voice-clip' + (v.id === state.selectedVoiceId ? ' selected' : '');
+      el.dataset.id = v.id;
+      el.style.left = (sourceStart / video.duration * 100) + '%';
+      el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
+      el.innerHTML = `<span class="clip-handle left" data-edge="left"></span>${waveformHtml(v.peaks)}<span class="voice-label">${v.name || tr('voiceClip', v.id)}</span><span class="clip-handle right" data-edge="right"></span>`;
+      track.appendChild(el);
+    }
+    group.appendChild(row);
   }
   const sel = state.voiceovers.find(v => v.id === state.selectedVoiceId);
   const panel = $('voiceEdit');
   if (sel) {
     panel.classList.add('visible');
     $('voiceEditLabel').textContent = `🎙 ${sel.name || tr('voiceClip', sel.id)} ${fmtTime(voiceOutStart(sel))}–${fmtTime(voiceOutStart(sel) + voiceOutDuration(sel))}`;
+    renderLaneOptions($('voiceLane'), state.voiceLaneCount, sel.lane || 0, 'voiceLane');
   } else {
     panel.classList.remove('visible');
   }
 }
-$('voiceTrack').addEventListener('click', e => {
+$('voiceTrackGroup').addEventListener('click', e => {
   const clip = e.target.closest('.voice-clip');
-  if (!clip) return;
-  state.selectedVoiceId = parseInt(clip.dataset.id);
+  if (!clip) { if (e.target.closest('.voice-track')) clearSelection(); return; }
+  selectOnly('voice', parseInt(clip.dataset.id));
   const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
   if (v) video.currentTime = outputToSourceTime(voiceOutStart(v));
   updateVoiceUI();
 });
 let voiceDrag = null;
-$('voiceTrack').addEventListener('pointerdown', e => {
+$('voiceTrackGroup').addEventListener('pointerdown', e => {
   const clip = e.target.closest('.voice-clip');
   if (!clip || !state.loaded) return;
-  state.selectedVoiceId = parseInt(clip.dataset.id);
+  selectOnly('voice', parseInt(clip.dataset.id));
   const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
   if (!v) return;
-  const bounds = $('voiceTrack').getBoundingClientRect();
+  const track = clip.closest('.voice-track');
+  const bounds = track.getBoundingClientRect();
   const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
   const outT = sourceToOutputTime(sourceT);
   const edge = e.target.closest('.clip-handle')?.dataset.edge || null;
   commitHistory();
-  voiceDrag = { clip: v, edge, offset: outT - clipOutStart(v) };
-  $('voiceTrack').setPointerCapture(e.pointerId);
+  voiceDrag = { clip: v, edge, offset: outT - clipOutStart(v), pointerId: e.pointerId };
+  $('voiceTrackGroup').setPointerCapture(e.pointerId);
   video.currentTime = outputToSourceTime(clipOutStart(v));
   updateVoiceUI();
 });
-$('voiceTrack').addEventListener('pointermove', e => {
+$('voiceTrackGroup').addEventListener('pointermove', e => {
   if (!voiceDrag) return;
-  const bounds = $('voiceTrack').getBoundingClientRect();
+  const lane = laneFromPoint('voiceTrackGroup', 'voice-track', e.clientX, e.clientY);
+  if (lane !== null && !voiceDrag.edge) voiceDrag.clip.lane = lane;
+  const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.voice-track')
+    || $('voiceTrackGroup').querySelector(`.voice-track[data-lane="${voiceDrag.clip.lane || 0}"]`)
+    || $('voiceTrackGroup').querySelector('.voice-track');
+  const bounds = track.getBoundingClientRect();
   const sourceT = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
   const outT = sourceToOutputTime(sourceT);
   if (voiceDrag.edge === 'left') setClipOutStart(voiceDrag.clip, outT);
@@ -2563,13 +2672,27 @@ $('voiceTrack').addEventListener('pointermove', e => {
   else moveClipOut(voiceDrag.clip, outT - voiceDrag.offset);
   updateVoiceUI();
 });
-$('voiceTrack').addEventListener('pointerup', () => { voiceDrag = null; });
+$('voiceTrackGroup').addEventListener('pointerup', e => {
+  const lane = laneFromPoint('voiceTrackGroup', 'voice-track', e.clientX, e.clientY);
+  if (voiceDrag && lane !== null && !voiceDrag.edge) voiceDrag.clip.lane = lane;
+  voiceDrag = null;
+  updateVoiceUI();
+});
 $('voiceDelete').onclick = () => {
+  if (!state.selectedVoiceId || !confirm(tr('confirmDeleteVoice'))) return;
   commitHistory();
   const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
   if (v && v.audio) v.audio.pause();
   state.voiceovers = state.voiceovers.filter(x => x.id !== state.selectedVoiceId);
   state.selectedVoiceId = null;
+  updateVoiceUI();
+};
+$('voiceClose').onclick = clearSelection;
+$('voiceLane').onchange = e => {
+  const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+  if (!v) return;
+  commitHistory();
+  v.lane = parseInt(e.target.value, 10) || 0;
   updateVoiceUI();
 };
 function stopVoicePreview() {
@@ -2594,27 +2717,37 @@ function syncVoicePreview(force = false) {
 }
 
 function updateCameraUI() {
-  const track = $('cameraTrack');
-  track.innerHTML = '';
+  const group = $('cameraTrackGroup');
+  group.innerHTML = '';
   if (!video.duration) return;
-  for (const c of state.facecams) {
-    const outStart = clipOutStart(c);
-    const outEnd = outStart + clipOutDuration(c);
-    const sourceStart = outputToSourceTime(outStart);
-    const sourceEnd = outputToSourceTime(outEnd);
-    const el = document.createElement('div');
-    el.className = 'camera-clip' + (c.id === state.selectedFaceId ? ' selected' : '');
-    el.dataset.id = c.id;
-    el.style.left = (sourceStart / video.duration * 100) + '%';
-    el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
-    el.innerHTML = `<span class="clip-handle left" data-edge="left"></span><span class="voice-label">${c.name || tr('cameraClip', c.id)}</span><span class="clip-handle right" data-edge="right"></span>`;
-    track.appendChild(el);
+  const needed = Math.max(1, state.cameraLaneCount, ...state.facecams.map(c => (c.lane || 0) + 1));
+  state.cameraLaneCount = needed;
+  for (let lane = 0; lane < needed; lane++) {
+    const row = document.createElement('div');
+    row.className = 'lane-row';
+    row.innerHTML = `<div class="lane-label" data-lane-base="camera">${tr('cameraLane')} ${lane + 1}</div><div class="camera-track" data-lane="${lane}"></div>`;
+    const track = row.querySelector('.camera-track');
+    for (const c of state.facecams.filter(x => (x.lane || 0) === lane)) {
+      const outStart = clipOutStart(c);
+      const outEnd = outStart + clipOutDuration(c);
+      const sourceStart = outputToSourceTime(outStart);
+      const sourceEnd = outputToSourceTime(outEnd);
+      const el = document.createElement('div');
+      el.className = 'camera-clip' + (c.id === state.selectedFaceId ? ' selected' : '');
+      el.dataset.id = c.id;
+      el.style.left = (sourceStart / video.duration * 100) + '%';
+      el.style.width = (Math.max(0.1, sourceEnd - sourceStart) / video.duration * 100) + '%';
+      el.innerHTML = `<span class="clip-handle left" data-edge="left"></span><span class="voice-label">${c.name || tr('cameraClip', c.id)}</span><span class="clip-handle right" data-edge="right"></span>`;
+      track.appendChild(el);
+    }
+    group.appendChild(row);
   }
   const sel = state.facecams.find(c => c.id === state.selectedFaceId);
   const panel = $('cameraEdit');
   if (sel) {
     panel.classList.add('visible');
     $('cameraEditLabel').textContent = `${sel.name || tr('cameraClip', sel.id)} ${fmtTime(clipOutStart(sel))}–${fmtTime(clipOutStart(sel) + clipOutDuration(sel))}`;
+    renderLaneOptions($('cameraLane'), state.cameraLaneCount, sel.lane || 0, 'cameraLane');
     $('camPos').value = sel.pos || state.camDefaults.pos;
     $('camShape').value = sel.shape || state.camDefaults.shape;
     $('camSize').value = sel.size ?? state.camDefaults.size;
@@ -2630,25 +2763,32 @@ function updateCameraUI() {
   }
 }
 let camDrag = null;
-$('cameraTrack').addEventListener('pointerdown', e => {
+$('cameraTrackGroup').addEventListener('pointerdown', e => {
   const clip = e.target.closest('.camera-clip');
-  if (!clip || !state.loaded) return;
-  state.selectedFaceId = parseInt(clip.dataset.id);
+  if (!clip) { if (e.target.closest('.camera-track')) clearSelection(); return; }
+  if (!state.loaded) return;
+  selectOnly('camera', parseInt(clip.dataset.id));
   const c = state.facecams.find(x => x.id === state.selectedFaceId);
   if (!c) return;
-  const bounds = $('cameraTrack').getBoundingClientRect();
+  const track = clip.closest('.camera-track');
+  const bounds = track.getBoundingClientRect();
   const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
   const outT = sourceToOutputTime(sourceT);
   const edge = e.target.closest('.clip-handle')?.dataset.edge || null;
   commitHistory();
   camDrag = { clip: c, edge, offset: outT - clipOutStart(c) };
-  $('cameraTrack').setPointerCapture(e.pointerId);
+  $('cameraTrackGroup').setPointerCapture(e.pointerId);
   video.currentTime = outputToSourceTime(clipOutStart(c));
   updateCameraUI();
 });
-$('cameraTrack').addEventListener('pointermove', e => {
+$('cameraTrackGroup').addEventListener('pointermove', e => {
   if (!camDrag) return;
-  const bounds = $('cameraTrack').getBoundingClientRect();
+  const lane = laneFromPoint('cameraTrackGroup', 'camera-track', e.clientX, e.clientY);
+  if (lane !== null && !camDrag.edge) camDrag.clip.lane = lane;
+  const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.camera-track')
+    || $('cameraTrackGroup').querySelector(`.camera-track[data-lane="${camDrag.clip.lane || 0}"]`)
+    || $('cameraTrackGroup').querySelector('.camera-track');
+  const bounds = track.getBoundingClientRect();
   const sourceT = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
   const outT = sourceToOutputTime(sourceT);
   if (camDrag.edge === 'left') setClipOutStart(camDrag.clip, outT);
@@ -2656,12 +2796,26 @@ $('cameraTrack').addEventListener('pointermove', e => {
   else moveClipOut(camDrag.clip, outT - camDrag.offset);
   updateCameraUI(); requestRender();
 });
-$('cameraTrack').addEventListener('pointerup', () => { camDrag = null; });
+$('cameraTrackGroup').addEventListener('pointerup', e => {
+  const lane = laneFromPoint('cameraTrackGroup', 'camera-track', e.clientX, e.clientY);
+  if (camDrag && lane !== null && !camDrag.edge) camDrag.clip.lane = lane;
+  camDrag = null;
+  updateCameraUI(); requestRender();
+});
 $('cameraDelete').onclick = () => {
+  if (!state.selectedFaceId || !confirm(tr('confirmDeleteCamera'))) return;
   commitHistory();
   state.facecams = state.facecams.filter(x => x.id !== state.selectedFaceId);
   state.selectedFaceId = null;
   updateCameraUI(); requestRender();
+};
+$('cameraClose').onclick = clearSelection;
+$('cameraLane').onchange = e => {
+  const c = state.facecams.find(x => x.id === state.selectedFaceId);
+  if (!c) return;
+  commitHistory();
+  c.lane = parseInt(e.target.value, 10) || 0;
+  updateCameraUI();
 };
 function bindCameraFade(id, key, valId) {
   $(id).addEventListener('input', e => {
@@ -2704,7 +2858,7 @@ function updatePlayheadUI() {
 // ---------- Segments (ตัดหลายท่อน + speed แยกท่อน) ----------
 let segId = 1;
 function initSegments() {
-  state.segments = [{ id: segId++, start: 0, end: video.duration, speed: 1 }];
+  state.segments = [{ id: segId++, start: 0, end: video.duration, speed: 1, lane: 0 }];
   state.selectedSeg = null;
   updateSegUI();
 }
@@ -2775,10 +2929,10 @@ function actionSplitAtPlayhead() {
   if (!s || t <= s.start + 0.05 || t >= s.end - 0.05) return false;
   commitHistory();
   const idx = state.segments.indexOf(s);
-  const right = { id: segId++, start: t, end: s.end, speed: s.speed };
+  const right = { id: segId++, start: t, end: s.end, speed: s.speed, lane: s.lane || 0 };
   s.end = t;
   state.segments.splice(idx + 1, 0, right);
-  state.selectedSeg = right.id;
+  selectOnly('seg', right.id);
   updateSegUI();
   return true;
 }
@@ -2788,7 +2942,7 @@ function actionTrimStartToPlayhead() {
   if (!s || t <= s.start + 0.05 || t >= s.end - 0.05) return false;
   commitHistory();
   s.start = t;
-  state.selectedSeg = s.id;
+  selectOnly('seg', s.id);
   updateSegUI();
   return true;
 }
@@ -2798,7 +2952,7 @@ function actionTrimEndToPlayhead() {
   if (!s || t <= s.start + 0.05 || t >= s.end - 0.05) return false;
   commitHistory();
   s.end = t;
-  state.selectedSeg = s.id;
+  selectOnly('seg', s.id);
   updateSegUI();
   return true;
 }
@@ -2847,7 +3001,7 @@ function splitVoiceAtPlayhead() {
   const right = { ...v, id: voiceId++, outStart: outT, outDuration: rightDur, start: outputToSourceTime(outT), duration: rightDur, mediaOffset: clipMediaOffset(v) + leftDur, name: tr('voiceClip', voiceId - 1), audio: new Audio(v.url) };
   v.outDuration = leftDur; v.duration = leftDur;
   state.voiceovers.push(right);
-  state.selectedVoiceId = right.id;
+  selectOnly('voice', right.id);
   updateVoiceUI();
   return true;
 }
@@ -2863,7 +3017,7 @@ function splitCameraAtPlayhead() {
   const right = { ...c, id: faceId++, outStart: outT, outDuration: rightDur, start: outputToSourceTime(outT), duration: rightDur, mediaOffset: clipMediaOffset(c) + leftDur, name: tr('cameraClip', faceId - 1), video: rightVideo };
   c.outDuration = leftDur; c.duration = leftDur;
   state.facecams.push(right);
-  state.selectedFaceId = right.id;
+  selectOnly('camera', right.id);
   updateCameraUI();
   return true;
 }
@@ -2873,7 +3027,7 @@ function selectSegmentNearPlayhead(dir = 1) {
   let idx = ordered.findIndex(s => s.id === state.selectedSeg);
   if (idx < 0) idx = ordered.findIndex(s => video.currentTime < s.end);
   idx = Math.min(ordered.length - 1, Math.max(0, idx + dir));
-  state.selectedSeg = ordered[idx].id;
+  selectOnly('seg', ordered[idx].id);
   video.currentTime = ordered[idx].start;
   updateSegUI();
 }
@@ -2888,19 +3042,31 @@ function setTimelineZoom(next) {
   state.timelineZoom = Math.min(8, Math.max(1, next));
   updateTimelineScale(anchor);
 }
+$('addVideoLane').onclick = () => { state.videoLaneCount++; updateSegUI(); };
+$('addVoiceLane').onclick = () => { state.voiceLaneCount++; updateVoiceUI(); };
+$('addCameraLane').onclick = () => { state.cameraLaneCount++; updateCameraUI(); };
 
 function updateSegUI() {
-  const track = $('segTrack');
-  track.innerHTML = '';
+  const group = $('videoTrackGroup');
+  group.innerHTML = '';
   if (!video.duration) return;
-  for (const s of state.segments) {
-    const el = document.createElement('div');
-    el.className = 'seg-block' + (s.id === state.selectedSeg ? ' selected' : '') + (s.speed > 1 ? ' fast' : '');
-    el.style.left = (s.start / video.duration * 100) + '%';
-    el.style.width = ((s.end - s.start) / video.duration * 100) + '%';
-    el.dataset.id = s.id;
-    el.innerHTML = `<span class="seg-handle left" data-edge="left"></span><span class="spd">${s.speed}x</span><span class="seg-handle right" data-edge="right"></span>`;
-    track.appendChild(el);
+  const needed = Math.max(1, state.videoLaneCount, ...state.segments.map(s => (s.lane || 0) + 1));
+  state.videoLaneCount = needed;
+  for (let lane = 0; lane < needed; lane++) {
+    const row = document.createElement('div');
+    row.className = 'lane-row';
+    row.innerHTML = `<div class="lane-label" data-lane-base="video">${tr('videoLane')} ${lane + 1}</div><div class="seg-track" data-lane="${lane}"></div>`;
+    const track = row.querySelector('.seg-track');
+    for (const s of state.segments.filter(x => (x.lane || 0) === lane)) {
+      const el = document.createElement('div');
+      el.className = 'seg-block' + (s.id === state.selectedSeg ? ' selected' : '') + (s.speed > 1 ? ' fast' : '');
+      el.style.left = (s.start / video.duration * 100) + '%';
+      el.style.width = ((s.end - s.start) / video.duration * 100) + '%';
+      el.dataset.id = s.id;
+      el.innerHTML = `<span class="seg-handle left" data-edge="left"></span><span class="spd">${s.speed}x</span><span class="seg-handle right" data-edge="right"></span>`;
+      track.appendChild(el);
+    }
+    group.appendChild(row);
   }
   updateRulerUI();
   updateVoiceUI();
@@ -2910,6 +3076,7 @@ function updateSegUI() {
   if (sel) {
     panel.classList.add('visible');
     $('segSpeed').value = String(sel.speed);
+    renderLaneOptions($('segLane'), state.videoLaneCount, sel.lane || 0, 'videoLane');
     $('segEditLabel').textContent = `🎞 ท่อน ${fmtTime(sel.start)}–${fmtTime(sel.end)}`;
   } else {
     panel.classList.remove('visible');
@@ -2944,24 +3111,28 @@ function clampSegment(s) {
 }
 
 let segDrag = null;
-$('segTrack').addEventListener('pointerdown', e => {
+$('videoTrackGroup').addEventListener('pointerdown', e => {
   const block = e.target.closest('.seg-block');
-  if (!block) return;
-  state.selectedSeg = parseInt(block.dataset.id);
+  if (!block) { if (e.target.closest('.seg-track')) clearSelection(); return; }
+  selectOnly('seg', parseInt(block.dataset.id));
   const s = state.segments.find(x => x.id === state.selectedSeg);
   if (!s) return;
-  const bounds = $('segTrack').getBoundingClientRect();
+  const track = block.closest('.seg-track');
+  const bounds = track.getBoundingClientRect();
   const edge = e.target.closest('.seg-handle')?.dataset.edge || null;
   const t = (e.clientX - bounds.left) / bounds.width * video.duration;
   segDrag = { s, edge, offsetStart: t - s.start, offsetEnd: s.end - t };
   if (edge) commitHistory();
-  $('segTrack').setPointerCapture(e.pointerId);
+  $('videoTrackGroup').setPointerCapture(e.pointerId);
   video.currentTime = edge === 'right' ? s.end : s.start;
   updateSegUI();
 });
-$('segTrack').addEventListener('pointermove', e => {
+$('videoTrackGroup').addEventListener('pointermove', e => {
   if (!segDrag || !video.duration) return;
-  const bounds = $('segTrack').getBoundingClientRect();
+  const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.seg-track')
+    || $('videoTrackGroup').querySelector(`.seg-track[data-lane="${segDrag.s.lane || 0}"]`)
+    || $('videoTrackGroup').querySelector('.seg-track');
+  const bounds = track.getBoundingClientRect();
   const raw = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
   if (segDrag.edge === 'left') {
     segDrag.s.start = raw;
@@ -2974,7 +3145,7 @@ $('segTrack').addEventListener('pointermove', e => {
   }
   updateSegUI();
 });
-$('segTrack').addEventListener('pointerup', () => { segDrag = null; });
+$('videoTrackGroup').addEventListener('pointerup', () => { segDrag = null; });
 
 $('splitBtn').onclick = () => {
   actionSplitAtPlayhead();
@@ -2982,12 +3153,14 @@ $('splitBtn').onclick = () => {
 
 $('segDelete').onclick = () => {
   if (state.segments.length <= 1) { alert(tr('oneSegmentRequired')); return; }
+  if (!state.selectedSeg || !confirm(tr('confirmDeleteSegment'))) return;
   commitHistory();
   state.segments = state.segments.filter(s => s.id !== state.selectedSeg);
   state.selectedSeg = null;
   updateSegUI();
   jumpToSegStart();
 };
+$('segClose').onclick = clearSelection;
 
 $('segSpeed').addEventListener('change', e => {
   const s = state.segments.find(x => x.id === state.selectedSeg);
@@ -2995,6 +3168,13 @@ $('segSpeed').addEventListener('change', e => {
   commitHistory();
   s.speed = parseFloat(e.target.value);
   if (segAt(video.currentTime) === s) video.playbackRate = s.speed;
+  updateSegUI();
+});
+$('segLane').addEventListener('change', e => {
+  const s = state.segments.find(x => x.id === state.selectedSeg);
+  if (!s) return;
+  commitHistory();
+  s.lane = parseInt(e.target.value, 10) || 0;
   updateSegUI();
 });
 
@@ -3112,6 +3292,7 @@ $('mDelete').onclick = () => {
   state.selectedId = null;
   updateTimelineUI(); requestRender();
 };
+$('markerClose').onclick = clearSelection;
 
 // timeline interactions: click = seek, click marker = select, drag marker = move
 let dragging = null;
@@ -3121,7 +3302,7 @@ timeline.addEventListener('pointerdown', e => {
   const marker = e.target.closest('.zoom-marker');
   if (marker) {
     const id = parseInt(marker.dataset.id);
-    state.selectedId = id;
+    selectOnly('marker', id);
     const ev = state.events.find(x => x.id === id);
     const t = (e.clientX - bounds.left) / bounds.width * video.duration;
     const edge = e.target.closest('.z-handle')?.dataset.edge || null;
@@ -3130,6 +3311,7 @@ timeline.addEventListener('pointerdown', e => {
     timeline.setPointerCapture(e.pointerId);
     updateTimelineUI();
   } else {
+    clearSelection();
     const frac = Math.min(1, Math.max(0, (e.clientX - bounds.left) / bounds.width));
     video.currentTime = frac * video.duration;
   }
@@ -3166,6 +3348,9 @@ $('newBtn').onclick = () => {
     voiceovers: [], selectedVoiceId: null,
     facecams: [], selectedFaceId: null,
     segments: [], selectedSeg: null,
+    videoLaneCount: 1,
+    voiceLaneCount: 1,
+    cameraLaneCount: 1,
     crop: { t: 0, r: 0, b: 0, l: 0 },
     timelineZoom: 1,
   });
@@ -3183,9 +3368,9 @@ $('newBtn').onclick = () => {
   $('zoomCount').textContent = '';
   $('timeLabel').textContent = '0:00.0 / 0:00.0';
   playhead.style.left = '0';
-  $('segTrack').innerHTML = '';
-  $('voiceTrack').innerHTML = '';
-  $('cameraTrack').innerHTML = '';
+  $('videoTrackGroup').innerHTML = '';
+  $('voiceTrackGroup').innerHTML = '';
+  $('cameraTrackGroup').innerHTML = '';
   $('ruler').innerHTML = '';
   updateTimelineScale();
   timeline.querySelectorAll('.zoom-marker').forEach(el => el.remove());

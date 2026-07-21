@@ -42,10 +42,14 @@
 
 ## 5. Timeline Trim
 
+- กด `+ Video lane`, `+ Voice lane`, `+ Camera lane` แล้วต้องเห็น lane ใหม่แยกตามชนิด media
 - ลากขอบซ้าย/ขวาของ video segment เพื่อ trim หัว/ท้าย
 - กด `แบ่งท่อน` กลาง segment แล้ว trim แต่ละท่อนแยกกัน
+- เลือก segment แล้วเปลี่ยน `Lane` ใน panel ด้านล่าง ต้องย้าย segment ไป lane ที่เลือก
 - ลบท่อนหนึ่งออก แล้ว preview ต้องข้ามช่องว่างที่ถูกตัด
 - ปรับ speed รายท่อนแล้ว playhead ต้องข้ามถูกจังหวะ
+- กด `×` ใน panel หรือกด `Esc` แล้ว panel ที่เลือกต้องปิด
+- กดปุ่มลบใน panel ต้องมี confirm ก่อนลบ เพื่อกันกดพลาด
 
 ## 6. Keyboard Shortcuts
 
@@ -68,6 +72,7 @@
 - ต้องเห็น clip เสียงใน voice track พร้อม waveform bars
 - คลิก clip เสียงแล้ว playhead ต้องกระโดดไปจุดเริ่ม
 - ลาก voice clip ไปซ้าย/ขวาได้ และลากขอบซ้าย/ขวาเพื่อ trim ได้
+- ลาก voice clip ข้าม voice lane หรือเลือก `Lane` ใน panel แล้ว clip ต้องย้าย lane ได้
 - กด split ขณะ playhead อยู่กลาง voice clip แล้วต้องแตกเป็น 2 clip
 - เล่น preview แล้วต้องได้ยินเสียงบรรยายตรงช่วง clip
 - ทดสอบกับ segment speed `0.25x`: พากย์ตาม playback ที่ช้าลง แล้วเสียงใน preview/export ต้องเป็นเสียงเวลาจริง ไม่ยืดหรือช้าลงซ้ำ
@@ -82,6 +87,7 @@
 - ต้องเห็น camera clip ใน camera lane
 - preview ต้องเห็นวงกลมกล้องมุมขวาล่าง
 - ลาก/trim/split camera clip ได้
+- ลาก camera clip ข้าม camera lane หรือเลือก `Lane` ใน panel แล้ว clip ต้องย้าย lane ได้
 - ปรับ fade in/out แล้ว preview/export ต้องค่อย ๆ เข้า/ออก
 - ปรับ position, shape, size, margin แล้ว preview/export ต้องเปลี่ยนตาม
 - Export MP4 แล้ว camera overlay ต้องติดไฟล์
