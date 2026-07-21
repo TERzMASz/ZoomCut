@@ -3856,8 +3856,10 @@ applyStoredPanelSizes();
 initSplitters();
 window.addEventListener('resize', applyStoredPanelSizes);
 
-async function api(path, opts) {
-  const r = await fetch(path, opts);
+async function api(path, opts = {}, timeoutMs = 15000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const r = await fetch(path, { ...opts, signal: opts.signal || ctrl.signal }).finally(() => clearTimeout(timer));
   return { ok: r.ok, data: await r.json().catch(() => ({})) };
 }
 
@@ -3873,7 +3875,7 @@ async function openDiagnostics() {
   const list = $('diagList');
   $('diagOverlay').classList.add('visible');
   list.innerHTML = diagItem(true, state.lang === 'th' ? 'กำลังตรวจระบบ' : 'Checking system', state.lang === 'th' ? 'กำลังโหลด diagnostics จากแอป...' : 'Loading diagnostics from the app...');
-  const { ok, data } = await api('/api/diagnostics');
+  const { ok, data } = await api('/api/diagnostics', {}, 10000);
   if (!ok) {
     list.innerHTML = diagItem(false, state.lang === 'th' ? 'Diagnostics ใช้ไม่ได้' : 'Diagnostics unavailable', state.lang === 'th' ? 'เปิดผ่านเว็บ static อยู่ หรือ server ในแอปยังไม่พร้อม' : 'You may be running the static web editor or the app server is not ready.');
     return;
@@ -3901,7 +3903,7 @@ $('diagOverlay').addEventListener('click', e => { if (e.target === $('diagOverla
 // แสดงปุ่มเฉพาะเมื่อรันผ่าน serve.py (มี API)
 (async () => {
   try {
-    const { ok } = await api('/api/record/state');
+    const { ok } = await api('/api/record/state', {}, 5000);
     if (ok) { recBtn.style.display = ''; $('diagBtn').style.display = ''; }
   } catch {}
 })();
@@ -3909,6 +3911,7 @@ $('diagOverlay').addEventListener('click', e => { if (e.target === $('diagOverla
 recBtn.onclick = async () => {
   if (recState.recording) {
     recBtn.textContent = tr('recStopping');
+    $('quickRecord').classList.add('recording');
     await api('/api/record/stop', { method: 'POST' });
     return;
   }
@@ -3929,7 +3932,12 @@ async function openSourcePicker() {
   list.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px">${state.lang === 'th' ? 'กำลังโหลดรายชื่อหน้าต่าง...' : 'Loading windows...'}</div>`;
   $('pickerOverlay').classList.add('visible');
 
-  const { ok, data } = await api('/api/windows');
+  let ok = false, data = {};
+  try {
+    ({ ok, data } = await api('/api/windows', {}, 8000));
+  } catch (e) {
+    data = {};
+  }
   list.innerHTML = '';
 
   const addItem = (icon, name, detail, target) => {
@@ -3966,26 +3974,45 @@ $('pickerOverlay').addEventListener('click', e => {
 
 async function startRecording(target) {
   $('pickerOverlay').classList.remove('visible');
-  const { ok, data } = await api('/api/record/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(target),
-  });
-  if (!ok) { showActionableError(data.error || (state.lang === 'th' ? 'เริ่มอัดไม่ได้' : 'Could not start recording')); return; }
   recState.recording = true;
   recBtn.classList.add('recording');
   recBtn.textContent = tr('recStarting');
+  $('quickRecord').classList.add('recording');
+  if (recState.poller) clearInterval(recState.poller);
   recState.poller = setInterval(pollRecState, 1000);
+  try {
+    const { ok, data } = await api('/api/record/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(target),
+    }, 15000);
+    if (!ok) throw new Error(data.error || (state.lang === 'th' ? 'เริ่มอัดไม่ได้' : 'Could not start recording'));
+    pollRecState();
+  } catch (e) {
+    clearInterval(recState.poller);
+    recState.poller = null;
+    recState.recording = false;
+    recBtn.classList.remove('recording');
+    $('quickRecord').classList.remove('recording');
+    recBtn.textContent = tr('record');
+    await api('/api/record/stop', { method: 'POST' }, 5000).catch(() => {});
+    showActionableError((state.lang === 'th'
+      ? 'เริ่มอัดไม่สำเร็จหรือใช้เวลานานเกินไป:\n'
+      : 'Recording did not start or took too long:\n') + (e.message || e));
+  }
 }
 
 async function pollRecState() {
-  const { ok, data } = await api('/api/record/state');
+  let ok, data;
+  try { ({ ok, data } = await api('/api/record/state', {}, 5000)); }
+  catch { return; }
   if (!ok) return;
   if (data.running) {
     const secs = Math.max(0, Math.floor(Date.now() / 1000 - data.started));
     const mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
     recBtn.textContent = `${state.lang === 'th' ? '⏹ หยุดอัด' : '⏹ Stop'} ${mm}:${ss} • 👆${data.clicks}`;
     recBtn.title = 'คีย์ลัดหยุดอัดทั้งจอ: ⌃⌘S (Control-Command-S)';
+    $('quickRecord').classList.add('recording');
     return;
   }
   // ยังไม่ถึงสถานะจบ (finished/error) → ต้องรอต่อ ห้ามหยุด poll
@@ -3999,6 +4026,7 @@ async function pollRecState() {
   clearInterval(recState.poller);
   recState.recording = false;
   recBtn.classList.remove('recording');
+  $('quickRecord').classList.remove('recording');
   recBtn.textContent = tr('record');
   if (data.error) {
     showActionableError((state.lang === 'th' ? 'อัดไม่สำเร็จ:\n' : 'Recording failed:\n') + data.error);

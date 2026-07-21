@@ -53,7 +53,7 @@ function dbg(msg) { try { fs.appendFileSync(DEBUG_LOG, `[${new Date().toISOStrin
 
 function runJxa(script) {
   return new Promise((resolve) => {
-    execFile(OSASCRIPT, ['-l', 'JavaScript', '-e', script], { maxBuffer: 8 * 1024 * 1024, env: CHILD_ENV }, (err, stdout, stderr) => {
+    execFile(OSASCRIPT, ['-l', 'JavaScript', '-e', script], { maxBuffer: 8 * 1024 * 1024, env: CHILD_ENV, timeout: 6000 }, (err, stdout, stderr) => {
       if (err) { dbg(`osascript error: ${err.message} | stderr: ${stderr}`); return resolve([]); }
       try { resolve(JSON.parse(stdout)); } catch (e) { dbg(`JSON parse fail: ${e.message} | stdout head: ${String(stdout).slice(0, 200)}`); resolve([]); }
     });
@@ -184,6 +184,7 @@ function resetRec() {
 async function startRecording(recordingsDir, opts) {
   if (rec.active) throw new Error('กำลังอัดอยู่แล้ว');
   resetRec();
+  dbg(`record/start opts=${JSON.stringify(opts || {})}`);
   fs.mkdirSync(recordingsDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const base = path.join(recordingsDir, `recording-${stamp}`);
@@ -206,7 +207,7 @@ async function startRecording(recordingsDir, opts) {
       let m = await findMirrorWindow();
       if (!m) {
         spawn('/usr/bin/open', ['-a', 'iPhone Mirroring'], { env: CHILD_ENV });
-        for (let i = 0; i < 30 && !m; i++) { await new Promise((r) => setTimeout(r, 1000)); m = await findMirrorWindow(); }
+        for (let i = 0; i < 10 && !m; i++) { await new Promise((r) => setTimeout(r, 1000)); m = await findMirrorWindow(); }
         if (!m) throw new Error('ไม่พบหน้าต่าง iPhone Mirroring — เชื่อมต่อ iPhone ก่อน');
       }
       wid = m.id; rec.bounds = m.bounds;
@@ -222,6 +223,7 @@ async function startRecording(recordingsDir, opts) {
   try { fs.unlinkSync(outMov); } catch {}
 
   const cap = spawn(SCREENCAPTURE, [...capArgs, outMov], { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+  dbg(`screencapture spawn ${[...capArgs, outMov].join(' ')}`);
   rec.proc = cap;
   rec.base = base;
   rec.active = true;
