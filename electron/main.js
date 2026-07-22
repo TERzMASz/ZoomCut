@@ -1,12 +1,50 @@
 // ZoomCut Electron — main process
 // เปิด HTTP server ในตัว (server.js) แล้วโหลด index.html ผ่าน localhost
 // ทำให้ renderer (ตัวแก้ไข) ใช้โค้ดเดิมได้ทั้งดุ้น ไม่ต้องแก้
-const { app, BrowserWindow, shell, systemPreferences, dialog } = require('electron');
+const { app, BrowserWindow, shell, systemPreferences, dialog, ipcMain, session, Tray, Menu, nativeImage } = require('electron');
+const fs = require('fs');
 const path = require('path');
-const { startServer } = require('./server');
+const { startServer, stopRecording } = require('./server');
+const { createProjectStore } = require('./project-store');
 
 let mainWindow = null;
 let serverInfo = null;
+let projectStore = null;
+let ipcReady = false;
+let recordingTray = null;
+let recordingTrayTimer = null;
+const authorizedMediaPaths = new Set();
+
+function authorizeProjectMedia(result) {
+  for (const item of result?.document?.mediaPaths || []) {
+    if (item?.path) authorizedMediaPaths.add(path.resolve(item.path));
+  }
+  return result;
+}
+
+function showRecordingIndicator(active) {
+  if (!active) {
+    clearInterval(recordingTrayTimer);
+    recordingTrayTimer = null;
+    if (recordingTray) recordingTray.destroy();
+    recordingTray = null;
+    return;
+  }
+  if (recordingTray) return;
+  recordingTray = new Tray(nativeImage.createEmpty());
+  const startedAt = Date.now();
+  const refresh = () => {
+    const seconds = Math.floor((Date.now() - startedAt) / 1000);
+    recordingTray?.setTitle(`● REC ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`);
+  };
+  recordingTray.setToolTip('ZoomCut is recording');
+  recordingTray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Stop Recording', click: () => stopRecording().catch(() => {}) },
+    { label: 'Show ZoomCut', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+  ]));
+  refresh();
+  recordingTrayTimer = setInterval(refresh, 1000);
+}
 
 function webRoot() {
   // dev: โฟลเดอร์โปรเจกต์ (มี index.html), packaged: ภายใน app
@@ -32,24 +70,100 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!serverInfo || url !== `http://127.0.0.1:${serverInfo.port}/`) event.preventDefault();
+    const allowed = serverInfo && url.startsWith(`http://127.0.0.1:${serverInfo.port}/`);
+    if (!allowed) event.preventDefault();
   });
 
   // เปิดลิงก์ภายนอกในเบราว์เซอร์ระบบ
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https://') || url.startsWith('http://')) shell.openExternal(url);
     return { action: 'deny' };
   });
 
-  mainWindow.loadURL(`http://127.0.0.1:${serverInfo.port}/`);
+  projectStore = createProjectStore({ userData: app.getPath('userData'), dialog });
+  if (!ipcReady) {
+    ipcReady = true;
+    const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => {
+      if (!mainWindow || event.sender !== mainWindow.webContents) throw new Error('Untrusted IPC sender');
+      return fn(...args);
+    });
+    handle('project:save', (document) => projectStore.save(document));
+    handle('project:open', async () => authorizeProjectMedia(await projectStore.open()));
+    handle('project:autosave', (document) => projectStore.autosave(document));
+    handle('project:recovery', () => authorizeProjectMedia(projectStore.recovery()));
+    handle('project:clear-recovery', () => projectStore.clearRecovery());
+    handle('project:reset-current', () => projectStore.resetCurrent());
+    handle('media:register-project-path', (filePath) => {
+      const resolved = path.resolve(String(filePath || ''));
+      if (!authorizedMediaPaths.has(resolved)) throw new Error('Media path is not authorized by the opened project');
+      return serverInfo.registerMediaPath(resolved);
+    });
+    handle('media:register-recording', (base) => {
+      const safeBase = path.basename(String(base || '')).replace(/[^a-zA-Z0-9_.-]/g, '');
+      const result = serverInfo.registerMediaPath(path.join(serverInfo.recordingsDir, safeBase + '.mp4'));
+      const clicksPath = path.join(serverInfo.recordingsDir, safeBase + '.clicks.json');
+      if (fs.existsSync(clicksPath)) result.clicksUrl = serverInfo.registerMediaPath(clicksPath).url;
+      return result;
+    });
+    handle('media:persist', (arrayBuffer, extension) => {
+      const filePath = projectStore.persistAsset(Buffer.from(arrayBuffer), extension);
+      authorizedMediaPaths.add(path.resolve(filePath));
+      return serverInfo.registerMediaPath(filePath);
+    });
+    handle('media:choose-replacement', async (name) => {
+      const result = await dialog.showOpenDialog({
+        title: `Locate ${String(name || 'media file')}`,
+        properties: ['openFile'],
+        filters: [{ name: 'Media', extensions: ['mp4', 'mov', 'webm', 'm4a', 'mp3', 'wav', 'ogg'] }],
+      });
+      if (result.canceled || !result.filePaths[0]) return { canceled: true };
+      authorizedMediaPaths.add(path.resolve(result.filePaths[0]));
+      return { canceled: false, ...serverInfo.registerMediaPath(result.filePaths[0]) };
+    });
+    handle('export:choose-path', async (suggestedName) => {
+      const result = await dialog.showSaveDialog({
+        title: 'Export ZoomCut Video',
+        defaultPath: String(suggestedName || 'zoomcut-export.mp4'),
+        filters: [{ name: 'MP4 Video', extensions: ['mp4'] }],
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      const filePath = result.filePath.endsWith('.mp4') ? result.filePath : result.filePath + '.mp4';
+      return { canceled: false, ...serverInfo.registerExportTarget(filePath) };
+    });
+    handle('system:permissions', () => ({
+      screen: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'granted',
+      microphone: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('microphone') : 'granted',
+      camera: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('camera') : 'granted',
+      accessibility: process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true,
+    }));
+    handle('system:open-privacy', (pane) => {
+      const pages = {
+        screen: 'Privacy_ScreenCapture', microphone: 'Privacy_Microphone', camera: 'Privacy_Camera',
+        accessibility: 'Privacy_Accessibility', input: 'Privacy_ListenEvent',
+      };
+      const page = pages[pane] || pages.screen;
+      return shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${page}`);
+    });
+    handle('system:recording-indicator', (active) => { showRecordingIndicator(active); return { ok: true }; });
+  }
+
+  mainWindow.loadURL(`http://127.0.0.1:${serverInfo.port}/?token=${serverInfo.apiToken}`);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 app.whenReady().then(async () => {
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+    const local = serverInfo && requestingOrigin === `http://127.0.0.1:${serverInfo.port}`;
+    return local && ['media', 'display-capture'].includes(permission);
+  });
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    const local = serverInfo && webContents.getURL().startsWith(`http://127.0.0.1:${serverInfo.port}/`);
+    callback(Boolean(local && ['media', 'display-capture'].includes(permission)));
+  });
   // แจ้งสถานะสิทธิ์ Screen Recording (จอ) — ไม่บล็อก แค่เปิดหน้า settings ให้ถ้ายังไม่ได้
   if (process.platform === 'darwin') {
     const status = systemPreferences.getMediaAccessStatus('screen');
@@ -65,4 +179,4 @@ app.whenReady().then(async () => {
 
 // ปิดแอปจริงเมื่อปิดหน้าต่าง (รวม macOS ด้วย) — เพื่อให้เปิดใหม่แล้วอ่านสิทธิ์ล่าสุด
 // ไม่งั้นโปรเซสค้างด้วยสถานะสิทธิ์เดิม ทำให้ "ให้สิทธิ์แล้วแต่ยังอัดไม่ได้"
-app.on('window-all-closed', () => { app.quit(); });
+app.on('window-all-closed', () => { showRecordingIndicator(false); app.quit(); });

@@ -11,13 +11,18 @@
     "dist:mac": "electron-builder --mac dmg",
     "server": "node electron/server.js",
     "stage:android-tools": "bash scripts/stage-android-tools.sh",
-    "test": "node test/coordinate-math.test.js"
+    "stage:runtime-tools": "bash scripts/stage-runtime-tools.sh",
+    "test": "node --test test/*.test.js",
+    "test:security": "node --test test/security.test.js",
+    "qa": "npm test && node --check electron/main.js && node --check electron/server.js && node --check electron/preload.js"
   },
   "build": {
     "appId": "com.zoomcut.app",
     "productName": "ZoomCut",
+    "afterPack": "electron/after-pack.js",
     "files": [
       "electron/**/*",
+      "shared/**/*",
       "index.html"
     ],
     "extraResources": [
@@ -33,6 +38,9 @@
       "target": "dmg",
       "category": "public.app-category.video",
       "identity": null,
+      "hardenedRuntime": true,
+      "entitlements": "electron/entitlements.mac.plist",
+      "entitlementsInherit": "electron/entitlements.mac.plist",
       "darkModeSupport": true,
       "extendInfo": {
         "NSCameraUsageDescription": "ZoomCut ใช้กล้องสำหรับเว็บแคม overlay",
@@ -45,9 +53,10 @@
     }
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8",
-    "@electron/rebuild": "^3.7.0"
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "@electron/rebuild": "^4.2.0",
+    "@electron/fuses": "^2.1.3"
   },
   "optionalDependencies": {
     "uiohook-napi": "^1.5.4"

@@ -1,0 +1,16 @@
+ZoomCut bundled runtime notices
+
+This application can bundle the following independently maintained tools:
+
+- FFmpeg and ffprobe: https://ffmpeg.org/legal.html
+  License terms depend on the exact build configuration. Release engineering must retain the
+  corresponding license text, build configuration, and source-code offer required by that build.
+
+- Android Debug Bridge (adb), from Android SDK Platform Tools:
+  https://developer.android.com/tools/releases/platform-tools
+  Redistribution must be approved against the Android SDK license before a public release.
+
+- scrcpy and scrcpy-server: Apache License 2.0
+  https://github.com/Genymobile/scrcpy
+
+The generated runtime-manifest.txt records the exact binaries and SHA-256 hashes in each build.

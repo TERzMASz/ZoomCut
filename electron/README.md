@@ -23,11 +23,11 @@ npm install          # ครั้งแรก (postinstall rebuild uiohook ส
 npm start            # เปิดแอป
 ```
 
-## Build เป็น DMG (beta, ad-hoc signed — ฟรี ไม่ต้องมี Apple Developer)
+## Build เป็น DMG (beta, self-signed)
 
-```bash
-npm run dist:mac     # ได้ dist/ZoomCut-<version>.dmg
-```
+`bash electron/build-signed.sh` รัน QA, stage runtime tools, build, hardened-runtime signing และสร้าง DMG.
+
+Public build ใช้ `ZOOMCUT_SIGN_IDENTITY="Developer ID Application: ..." ZOOMCUT_NOTARIZE=1` พร้อม `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 
 ### เปิดครั้งแรกบน Mac (แอป beta ยังไม่ notarize)
 macOS จะเตือน "unidentified developer" — วิธีเปิด:

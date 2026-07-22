@@ -24,9 +24,13 @@
 
 ```
 index.html            ← ตัวแก้ไข/ตัดต่อทั้งหมด (vanilla JS + <canvas>, ไม่มี build step)
+shared/editor-core.js ← project schema + pure timeline/project helpers (ใช้ได้ทั้ง browser/Node tests)
 electron/
   main.js             ← Electron main: เปิด server ในตัว + สร้างหน้าต่าง โหลด http://127.0.0.1:<port>
   server.js           ← HTTP server + ตรรกะอัดจอ (พอร์ตจาก record.py/serve.py มาเป็น Node)
+  preload.js          ← bridge แบบจำกัดสำหรับ project/media/export/system permission
+  project-store.js    ← save/open/autosave/recovery + content-addressed assets
+  security.js         ← path containment, request limits, stream upload, option validation
   build-signed.sh     ← build + เซ็นด้วย self-signed cert (identity คงที่) + ทำ DMG
   README.md           ← วิธี build/แจก
 record.py, serve.py   ← เวอร์ชัน Python เดิม (ยังใช้รันบน Mac ได้ แต่ Electron คือทางหลักแล้ว)
@@ -65,7 +69,7 @@ bash electron/build-signed.sh      # ได้ dist/ZoomCut-<ver>-arm64.dmg
 
 ## 4. สถาปัตยกรรม renderer (`index.html`)
 
-ไฟล์เดียว ~2000 บรรทัด vanilla JS. ทุกอย่างวาดลง `<canvas id="canvas">`
+renderer หลักเป็น vanilla JS และวาดลง `<canvas id="canvas">`; pure data rules แยกไว้ใน `shared/editor-core.js`
 
 ### 4.1 State กลาง
 มี object `state` เดียวเก็บทุกอย่าง (mode, aspect, crop, segments, events, frame, bg, ฯลฯ)
@@ -96,9 +100,12 @@ sourceRect(cam)       → แปลงกล้อง → พิกัดพิ�
 - `outputDuration()` = ผลรวม `(end-start)/speed`
 
 ### 4.5 Export
-`MediaRecorder(canvas.captureStream(60))` → ได้ blob (VFR) → **POST `/api/remux`** ให้ ffmpeg
+`MediaRecorder(canvas.captureStream(60))` → stream request ลง temporary file → **POST `/api/remux`** ให้ ffmpeg
 แปลงเป็น MP4 frame rate คงที่ (แก้อาการ "เล่นได้แค่ช่วงแรกแล้วค้าง")
 บนเว็บ (ไม่มี `/api/remux`) จะ fallback ดาวน์โหลด blob เดิม
+
+### 4.7 Project persistence
+ไฟล์ `.zoomcut` เก็บ schema version, settings, lanes, trims, zooms และ media paths. Autosave เขียนแบบ atomic ไปที่ `userData/recovery`; voice/camera ที่อัดในแอปเก็บแบบ content-addressed ใน `userData/project-assets`. เปิดโปรเจกต์แล้วหา media ไม่เจอจะขอ relink.
 
 ### 4.6 สะพานเชื่อม recording (renderer ↔ server)
 renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ่ม "🔴 อัดหน้าจอ" แสดงเฉพาะเมื่อ `/api/record/state` ตอบ (คือรันในแอป/ผ่าน server) — บนเว็บ Vercel จะซ่อนอัตโนมัติ
@@ -117,7 +124,8 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 | `GET /api/record/state` | สถานะอัด (running, clicks, finished, error) |
 | `POST /api/record/start` | เริ่มอัด — body `{screenIndex}` = ทั้งจอ / `{windowId}` = หน้าต่าง / `{}` = iPhone |
 | `POST /api/record/stop` | หยุดอัด |
-| `POST /api/remux?ext=webm` | รับ blob export → ffmpeg → MP4 CFR |
+| `POST /api/remux?ext=webm&target=...&job=...` | stream export → ffmpeg → MP4 CFR |
+| `POST /api/export/cancel` | หยุด FFmpeg export ตาม job id |
 | `GET /recordings/*` | เสิร์ฟไฟล์ที่อัด (อยู่ที่ `userData/recordings`) |
 
 ### ระบบอัด (พอร์ตจาก record.py)
@@ -172,7 +180,8 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 - [ ] Windows EXE (backend อัดด้วย ffmpeg แทน screencapture ซึ่งเป็น macOS-only)
 - [ ] Notarize (ต้องมี Apple Developer $99/ปี) → เปิดได้เนียนไม่มีเตือน
 - [ ] ไอคอนแอป (ตอนนี้ใช้ default Electron)
-- [ ] เว็บแคม overlay (ตามที่ ScreenArc/Screeny มี)
+- [ ] deterministic/offline frame renderer (ปัจจุบัน canvas export ยัง realtime)
+- [ ] Android real-device matrix + bundled adb/scrcpy ที่ผ่าน license review
 - [ ] Debug log อยู่ที่ `/tmp/zoomcut-debug.log` (จาก `dbg()` ใน server.js)
 
 ---

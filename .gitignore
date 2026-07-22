@@ -5,4 +5,7 @@
 node_modules/
 dist/
 recordings/
+resources/bin/**/*
+!resources/bin/**/.gitkeep
+resources/runtime-manifest.txt
 __pycache__/

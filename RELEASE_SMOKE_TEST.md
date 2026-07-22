@@ -19,6 +19,7 @@
 - หน้าเริ่มต้นใน timeline ต้องมี 3 ปุ่มชัดเจน: `อัดหน้าจอ`, `เพิ่มสื่อ`, `พากย์เสียง`
 - ก่อนมีวิดีโอ ปุ่ม `พากย์เสียง` ใน quick actions ต้อง disabled
 - กด `อัดหน้าจอ`
+- ระหว่างอัด menu bar ต้องแสดง `● REC mm:ss` และเมนู `Stop Recording` ต้องหยุดได้
 - เลือกทั้งจอหรือหน้าต่างสั้น ๆ
 - อัดประมาณ 10 วินาที และคลิกอย่างน้อย 3 จุดที่ห่างกัน
 - หยุดด้วยปุ่มในแอป และทดสอบคีย์ลัด `Control-Command-S` อีกหนึ่งรอบ
@@ -123,3 +124,22 @@
 - ไฟล์ต้องเล่นได้จนจบใน QuickTime
 - เช็กว่าช่วงที่ตัดออกไม่โผล่กลับมา
 - เช็กว่า zoom/tap ripple ตรงกับ preview
+- ทดสอบ 1080p, 2K และ 4K แล้วตรวจ resolution ด้วย ffprobe
+- ระหว่าง remux กด Cancel แล้วต้องไม่มี ffmpeg/process หรือ temporary file ค้าง
+- เปิด Activity Monitor ระหว่าง export ยาว: backend memory ต้องไม่โตตามขนาดไฟล์ export
+
+## 11. Project / Recovery
+
+- เปิด base video, เพิ่ม overlay, voice, camera, trim และ zoom แล้ว Save เป็น `.zoomcut`
+- ปิด/เปิดแอปและ Open project: timeline และ settings ต้องกลับมาครบ
+- ย้าย media ต้นฉบับ แล้ว Open project: ต้องถาม relink และเปิดต่อได้หลังเลือกไฟล์แทน
+- แก้งานโดยไม่ Save แล้วบังคับปิดแอป: เปิดใหม่ต้องเสนอ autosave recovery
+- ทดสอบ lock/mute/solo/hide ทุก lane และตรวจทั้ง preview/export
+
+## 12. Security / Packaging
+
+- `npm run qa` และ `npm audit` ผ่าน release gate
+- เรียก `/api/record/state` โดยไม่มี token ต้องได้ 401
+- staged `ffmpeg`/`ffprobe` ต้องรันได้จาก `resources/bin/<platform>`
+- release build ต้องใช้ `ZOOMCUT_REQUIRE_RUNTIME_TOOLS=1` เพื่อกัน adb/scrcpy หาย
+- ตรวจ `codesign --verify --deep --strict` และ notarization/staple สำหรับ public build

@@ -247,6 +247,10 @@
   .lane-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; }
   .lane-label { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
   .lane-row .seg-track, .lane-row .voice-track, .lane-row .camera-track { margin-top: 0; }
+  .lane-label { display:flex; align-items:center; gap:2px; }
+  .lane-label .lane-name { margin-right:auto; overflow:hidden; text-overflow:ellipsis; }
+  .lane-tool { border:0; background:transparent; color:var(--muted); padding:1px 2px; cursor:pointer; font-size:10px; }
+  .lane-tool.active { color:var(--accent); }
   .track-group { display: grid; gap: 0; }
   .timeline {
     position: relative;
@@ -549,6 +553,7 @@
     transition: width .2s;
   }
   .export-box .sub { font-size: 12px; color: var(--muted); }
+  .project-status { font-size: 11px; color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #pickerOverlay {
     position: fixed;
     inset: 0;
@@ -682,10 +687,16 @@
   <button class="btn" id="themeBtn" title="Light/Dark mode">🌙</button>
   <button class="btn" id="shortcutBtn" title="Keyboard shortcuts">⌨️</button>
   <button class="btn" id="newBtn" title="เริ่มงานชิ้นใหม่ (ล้างงานปัจจุบัน)">🆕 งานใหม่</button>
+  <button class="btn" id="projectOpenBtn" style="display:none" title="Open ZoomCut project">📂 Project</button>
+  <button class="btn" id="projectSaveBtn" style="display:none" disabled title="Save ZoomCut project">💾</button>
+  <span class="project-status" id="projectStatus"></span>
   <button class="btn" id="diagBtn" style="display:none" title="ตรวจระบบอัดหน้าจอ/ffmpeg/click hook">🩺 ตรวจระบบ</button>
   <button class="btn" id="recBtn" style="display:none">🔴 อัดหน้าจอ</button>
   <button class="btn" id="openBtn">📂 เปิดวิดีโอ/รูป</button>
   <button class="btn" id="snapBtn" disabled title="บันทึกเฟรมปัจจุบันเป็น PNG">📸</button>
+  <select id="videoExportPreset" class="mini-select" style="width:92px" disabled title="Export resolution">
+    <option value="1">1080p</option><option value="1.333333">2K</option><option value="2">4K</option>
+  </select>
   <button class="btn primary" id="exportBtn" disabled>⬇️ Export วิดีโอ</button>
 </header>
 
@@ -904,6 +915,8 @@
       <div class="marker-edit" id="voiceEdit">
         <span id="voiceEditLabel">🎙 Voice over</span>
         <span><label>Lane </label><select class="speed-select" id="voiceLane"></select></span>
+        <span><label>Volume </label><input type="range" id="voiceVolume" min="0" max="2" step="0.05"><span class="val" id="voiceVolumeVal">100%</span></span>
+        <label><input type="checkbox" id="voiceMuted"> Mute</label>
         <button class="btn small danger" id="voiceDelete">🗑 ลบเสียงนี้</button>
         <button class="btn small panel-close" id="voiceClose" title="Close">×</button>
       </div>
@@ -921,6 +934,14 @@
             <option value="3">3x</option>
             <option value="4">4x</option>
           </select>
+        </span>
+        <span id="overlayControls" style="display:none">
+          <label>Scale </label><input type="range" id="overlayScale" min="10" max="200" step="1"><span class="val" id="overlayScaleVal">100%</span>
+          <label>X </label><input type="range" id="overlayX" min="0" max="100" step="1">
+          <label>Y </label><input type="range" id="overlayY" min="0" max="100" step="1">
+          <label>Opacity </label><input type="range" id="overlayOpacity" min="0" max="1" step="0.05">
+          <label>Volume </label><input type="range" id="overlayVolume" min="0" max="2" step="0.05">
+          <label><input type="checkbox" id="overlayMuted"> Mute</label>
         </span>
         <button class="btn small danger" id="segDelete">🗑 ตัดท่อนนี้ออก</button>
         <button class="btn small panel-close" id="segClose" title="Close">×</button>
@@ -975,6 +996,7 @@
     <h2>กำลัง Export วิดีโอ…</h2>
     <div class="progress-bar"><div id="exportProgress"></div></div>
     <div class="sub" id="exportSub">กำลังเรนเดอร์แบบเรียลไทม์ — อย่าปิดหรือสลับไปแท็บอื่น (ต้องให้แท็บนี้แสดงอยู่)</div>
+    <button class="btn small danger" id="exportCancel" style="margin-top:14px">Cancel export</button>
   </div>
 </div>
 
@@ -982,6 +1004,7 @@
 <input type="file" id="bgImageInput" accept="image/*">
 <video id="video" style="display:none" playsinline></video>
 
+<script src="/shared/editor-core.js"></script>
 <script>
 'use strict';
 
@@ -990,6 +1013,8 @@ const $ = id => document.getElementById(id);
 const video = $('video');
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
+const desktop = window.zoomcutDesktop || null;
+const API_TOKEN = new URLSearchParams(location.search).get('token') || '';
 
 const state = {
   loaded: false,
@@ -1015,6 +1040,7 @@ const state = {
   defHold: 1.0,
   zoomStyle: 'subtle',
   exportScale: 2,
+  videoExportScale: 1,
   segments: [],    // {id, start, end, speed, lane} — ท่อนที่เก็บไว้ (ช่องว่างระหว่างท่อน = ถูกตัดออก)
   selectedSeg: null,
   videoClips: [],  // {id, outStart, outDuration, mediaOffset, lane, url, video, name}
@@ -1035,7 +1061,12 @@ const state = {
   videoLaneCount: 1,
   voiceLaneCount: 1,
   cameraLaneCount: 1,
+  laneSettings: { video: [], voice: [], camera: [] },
   exporting: false,
+  baseMedia: null,
+  projectPath: null,
+  projectCreatedAt: null,
+  dirty: false,
 };
 let nextId = 1;
 let videoClipId = 1;
@@ -1080,6 +1111,8 @@ const I18N = {
   th: {
     hint: 'อัดหน้าจอ iPhone (Control Center) → ลากไฟล์มาที่นี่ → คลิกจุดที่อยากซูม → Export',
     newJob: '🆕 งานใหม่', diagnostics: '🩺 ตรวจระบบ', record: '🔴 อัดหน้าจอ',
+    projectOpen: '📂 เปิดงาน', projectSave: '💾 บันทึกงาน', projectSaved: 'บันทึกแล้ว', projectAutosaved: 'สำรองอัตโนมัติแล้ว',
+    projectRecovered: 'กู้คืนงานล่าสุดแล้ว', projectMissing: 'ไม่พบไฟล์สื่อของโปรเจกต์', exportCancel: 'ยกเลิก Export',
     open: '📂 เปิดวิดีโอ/รูป', exportVideo: '⬇️ Export วิดีโอ', exportPng: '⬇️ Export PNG',
     play: '▶️ เล่น', pause: '⏸ หยุด', split: '✂️ แบ่งท่อน',
     voice: '🎙 Voice over', stopVoice: '⏹ หยุดเสียง', recordingVoice: '🔴 กำลังอัดเสียง',
@@ -1135,6 +1168,8 @@ const I18N = {
   en: {
     hint: 'Record or import a screen video → click points to auto zoom → export',
     newJob: '🆕 New', diagnostics: '🩺 Diagnostics', record: '🔴 Record',
+    projectOpen: '📂 Open project', projectSave: '💾 Save project', projectSaved: 'Saved', projectAutosaved: 'Autosaved',
+    projectRecovered: 'Recovered latest work', projectMissing: 'Project media is missing', exportCancel: 'Cancel export',
     open: '📂 Open video/image', exportVideo: '⬇️ Export video', exportPng: '⬇️ Export PNG',
     play: '▶️ Play', pause: '⏸ Pause', split: '✂️ Split',
     voice: '🎙 Voice over', stopVoice: '⏹ Stop voice', recordingVoice: '🔴 Recording voice',
@@ -1237,6 +1272,7 @@ function commitHistory() {
   history.undo.push(stateSnapshot());
   if (history.undo.length > 80) history.undo.shift();
   history.redo.length = 0;
+  markProjectDirty();
 }
 function undoEdit() {
   if (!history.undo.length) return;
@@ -1292,6 +1328,41 @@ function renderLaneOptions(select, count, selected, labelKey) {
     select.appendChild(opt);
   }
 }
+function laneConfig(kind, lane) {
+  if (!state.laneSettings) state.laneSettings = { video: [], voice: [], camera: [] };
+  if (!state.laneSettings[kind]) state.laneSettings[kind] = [];
+  if (!state.laneSettings[kind][lane]) state.laneSettings[kind][lane] = { locked: false, muted: false, solo: false, hidden: false };
+  return state.laneSettings[kind][lane];
+}
+function laneEnabled(kind, lane, purpose = 'display') {
+  const configs = state.laneSettings?.[kind] || [];
+  const cfg = laneConfig(kind, lane);
+  if (configs.some(x => x?.solo) && !cfg.solo) return false;
+  if (purpose === 'audio') return !cfg.muted;
+  return !cfg.hidden;
+}
+function laneLabelHtml(kind, lane, labelKey) {
+  const cfg = laneConfig(kind, lane);
+  return `<div class="lane-label" data-lane-base="${kind}"><span class="lane-name">${tr(labelKey)} ${lane + 1}</span>`
+    + `<button class="lane-tool${cfg.locked ? ' active' : ''}" data-lane-action="locked" title="Lock">${cfg.locked ? '🔒' : '🔓'}</button>`
+    + `<button class="lane-tool${cfg.muted ? ' active' : ''}" data-lane-action="muted" title="Mute">M</button>`
+    + `<button class="lane-tool${cfg.solo ? ' active' : ''}" data-lane-action="solo" title="Solo">S</button>`
+    + `<button class="lane-tool${cfg.hidden ? ' active' : ''}" data-lane-action="hidden" title="Hide">${cfg.hidden ? '◌' : '●'}</button></div>`;
+}
+function bindLaneTools(groupId, kind, update) {
+  $(groupId).addEventListener('click', e => {
+    const button = e.target.closest('[data-lane-action]');
+    if (!button) return;
+    e.stopPropagation();
+    const label = button.closest('[data-lane-base]');
+    const row = label.closest('.lane-row');
+    const lane = [...row.parentNode.children].indexOf(row);
+    const key = button.dataset.laneAction;
+    const cfg = laneConfig(kind, lane);
+    cfg[key] = !cfg[key];
+    markProjectDirty(); update(); requestRender();
+  });
+}
 function laneFromPoint(groupId, trackClass, x, y) {
   const el = document.elementFromPoint(x, y);
   const track = el?.closest?.(`.${trackClass}`);
@@ -1302,6 +1373,9 @@ function applyLanguage() {
   $('langSel').value = state.lang;
   $('appHint').textContent = tr('hint');
   $('newBtn').textContent = tr('newJob');
+  $('projectOpenBtn').textContent = tr('projectOpen');
+  $('projectSaveBtn').textContent = tr('projectSave');
+  $('exportCancel').textContent = tr('exportCancel');
   $('diagBtn').textContent = tr('diagnostics');
   if (!recState.recording) $('recBtn').textContent = tr('record');
   $('openBtn').textContent = tr('open');
@@ -1362,9 +1436,9 @@ function applyLanguage() {
   $('micSel').title = state.lang === 'th' ? 'เลือกไมโครโฟน' : 'Choose microphone';
   $('camSel').title = state.lang === 'th' ? 'เลือกกล้อง' : 'Choose camera';
   $('cameraDelete').textContent = tr('cameraDelete');
-  document.querySelectorAll('[data-lane-base="video"]').forEach((el, i) => el.textContent = `${tr('videoLane')} ${i + 1}`);
-  document.querySelectorAll('[data-lane-base="voice"]').forEach((el, i) => el.textContent = `${tr('voiceLane')} ${i + 1}`);
-  document.querySelectorAll('[data-lane-base="camera"]').forEach((el, i) => el.textContent = `${tr('cameraLane')} ${i + 1}`);
+  document.querySelectorAll('[data-lane-base="video"] .lane-name').forEach((el, i) => el.textContent = `${tr('videoLane')} ${i + 1}`);
+  document.querySelectorAll('[data-lane-base="voice"] .lane-name').forEach((el, i) => el.textContent = `${tr('voiceLane')} ${i + 1}`);
+  document.querySelectorAll('[data-lane-base="camera"] .lane-name').forEach((el, i) => el.textContent = `${tr('cameraLane')} ${i + 1}`);
   document.querySelectorAll('.panel-close').forEach(btn => btn.title = tr('closePanel'));
   document.querySelectorAll('#segEdit label, #voiceEdit label, #cameraEdit label').forEach(label => {
     if (label.closest('span')?.querySelector('#segLane, #voiceLane, #cameraLane')) label.textContent = tr('lane') + ' ';
@@ -1447,6 +1521,8 @@ bindChips('posRow', 'pos', v => state.posV = v);
 bindChips('sbRow', 'sb', v => state.statusBar = v);
 bindChips('tapRow', 'tap', v => state.showTaps = v === 'on');
 bindChips('scaleRow', 'scale', v => state.exportScale = parseInt(v));
+$('videoExportPreset').value = String(state.videoExportScale);
+$('videoExportPreset').onchange = e => { state.videoExportScale = parseFloat(e.target.value) || 1; markProjectDirty(); };
 bindChips('zoomStyleRow', 'zoomStyle', v => {
   state.zoomStyle = v;
   const z = currentZoomStyle();
@@ -1570,6 +1646,7 @@ function applySettings(s) {
   $('phoneColors').style.display = state.frame === 'iphone' ? 'flex' : 'none';
   $('urlText').style.display = state.frame === 'browser' ? 'block' : 'none';
   $('urlText').value = state.urlText;
+  $('videoExportPreset').value = String(state.videoExportScale || 1);
   phoneColorsRow.querySelectorAll('.phone-swatch').forEach((x, i) =>
     x.classList.toggle('active', PHONE_COLORS[i][0] === state.frameColor));
   for (const [id, key, fmt] of [['padding', 'padding', v => v + '%'], ['radius', 'radius', v => v + '%'],
@@ -1667,6 +1744,17 @@ $('fileInput').onchange = e => {
   e.target.value = '';
 };
 
+function fileSource(file) {
+  let sourcePath = '';
+  try { sourcePath = desktop?.getPathForFile(file) || ''; } catch {}
+  return { sourcePath, name: file.name || '', type: file.type || '' };
+}
+
+async function registerMediaSource(sourcePath) {
+  if (!desktop || !sourcePath) throw new Error(tr('projectMissing'));
+  return desktop.project.registerProjectPath(sourcePath);
+}
+
 function handleMediaFiles(files) {
   const json = files.find(f => f.name.endsWith('.json'));
   const images = files.filter(f => f.type.startsWith('image/'));
@@ -1716,6 +1804,13 @@ function addVideoClip(file) {
       url,
       video: v,
       name: file.name || tr('videoClip', videoClipId - 1),
+      ...fileSource(file),
+      opacity: 1,
+      scale: 100,
+      posX: 50,
+      posY: 50,
+      volume: 1,
+      muted: false,
     });
     state.videoLaneCount = Math.max(state.videoLaneCount, lane + 1);
     selectOnly('videoClip', videoClipId - 1);
@@ -1758,15 +1853,17 @@ async function importClicks(file) {
 }
 
 function enterLoadedUI() {
+  const isVideo = state.mode === 'video';
   canvas.style.display = '';
   $('dropHint').style.display = 'none';
   $('exportBtn').disabled = false;
+  $('videoExportPreset').disabled = !isVideo;
   $('snapBtn').disabled = false;
-  const isVideo = state.mode === 'video';
   $('playBtn').disabled = !isVideo;
   $('splitBtn').disabled = !isVideo;
   $('voiceBtn').disabled = !isVideo;
   $('quickVoice').disabled = !isVideo;
+  $('projectSaveBtn').disabled = !desktop;
   $('exportBtn').textContent = isVideo ? tr('exportVideo') : tr('exportPng');
   $('imgExportSec').style.display = isVideo ? 'none' : '';
   document.querySelector('.timeline-area').style.display = isVideo ? '' : 'none';
@@ -1779,6 +1876,7 @@ function loadImage(file) {
     state.mode = 'image';
     state.imageEl = img;
     state.loaded = true;
+    state.baseMedia = fileSource(file);
     state.events = [];
     state.taps = [];
     state.voiceovers = [];
@@ -1790,6 +1888,7 @@ function loadImage(file) {
     state.videoLaneCount = 1;
     state.voiceLaneCount = 1;
     state.cameraLaneCount = 1;
+    state.laneSettings = { video: [], voice: [], camera: [] };
     state.selectedId = null;
     state.crop = { t: 0, r: 0, b: 0, l: 0 };
     syncCropUI();
@@ -1803,10 +1902,15 @@ function loadImage(file) {
 }
 
 function loadFile(file, clicksFile) {
-  video.src = URL.createObjectURL(file);
+  loadVideoSource(URL.createObjectURL(file), fileSource(file), clicksFile);
+}
+
+function loadVideoSource(url, source, clicksFile, onLoaded) {
+  video.src = url;
   video.onloadedmetadata = () => {
     state.mode = 'video';
     state.loaded = true;
+    state.baseMedia = { ...(source || {}), url };
     state.events = [];
     state.taps = [];
     state.voiceovers = [];
@@ -1818,6 +1922,7 @@ function loadFile(file, clicksFile) {
     state.videoLaneCount = 1;
     state.voiceLaneCount = 1;
     state.cameraLaneCount = 1;
+    state.laneSettings = { video: [], voice: [], camera: [] };
     state.selectedId = null;
     state.crop = { t: 0, r: 0, b: 0, l: 0 };
     syncCropUI();
@@ -1836,8 +1941,167 @@ function loadFile(file, clicksFile) {
       const queued = pendingOverlayFiles.splice(0);
       queued.forEach(addVideoClip);
     }
+    if (onLoaded) onLoaded();
   };
 }
+
+let autosaveTimer = null;
+let autosaveBusy = false;
+function setProjectStatus(text) { $('projectStatus').textContent = text || ''; }
+function markProjectDirty() {
+  if (!state.loaded || !desktop) return;
+  state.dirty = true;
+  setProjectStatus('•');
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => autosaveProject(), 1200);
+}
+
+function assetExtension(blob, fallback) {
+  const type = String(blob?.type || '');
+  if (type.includes('webm')) return 'webm';
+  if (type.includes('mp4')) return 'mp4';
+  if (type.includes('wav')) return 'wav';
+  if (type.includes('ogg')) return 'ogg';
+  return fallback;
+}
+
+async function persistRecordedAssets() {
+  if (!desktop) return;
+  const pending = [...state.voiceovers, ...state.facecams].filter(x => !x.sourcePath && x.blob);
+  for (const clip of pending) {
+    const stored = await desktop.project.persistAsset(await clip.blob.arrayBuffer(), assetExtension(clip.blob, 'webm'));
+    clip.sourcePath = stored.path;
+    clip.url = stored.url;
+    if (state.voiceovers.includes(clip)) clip.audio = new Audio(stored.url);
+    else {
+      const element = document.createElement('video');
+      element.src = stored.url; element.muted = true; element.playsInline = true;
+      clip.video = element;
+    }
+  }
+}
+
+async function projectDocument() {
+  await persistRecordedAssets();
+  const document = ZoomCutCore.createProject(state, { createdAt: state.projectCreatedAt });
+  state.projectCreatedAt = document.createdAt;
+  return document;
+}
+
+async function autosaveProject() {
+  if (!desktop || !state.loaded || autosaveBusy || !state.baseMedia?.sourcePath) return;
+  autosaveBusy = true;
+  try {
+    await desktop.project.autosave(await projectDocument());
+    state.dirty = false;
+    setProjectStatus(tr('projectAutosaved'));
+  } catch (error) {
+    setProjectStatus(error.message || 'Autosave failed');
+  } finally {
+    autosaveBusy = false;
+  }
+}
+
+async function saveProject() {
+  if (!desktop || !state.loaded) return;
+  try {
+    const result = await desktop.project.save(await projectDocument());
+    if (result.canceled) return;
+    state.projectPath = result.path;
+    state.dirty = false;
+    setProjectStatus(tr('projectSaved'));
+  } catch (error) { showActionableError(error.message); }
+}
+
+function replaceMissingPath(document, missing, replacement) {
+  const update = item => {
+    if (item && (item.id === missing.id || missing.kind === 'base')) item.sourcePath = replacement.path;
+  };
+  if (missing.kind === 'base') update(document.baseMedia);
+  if (missing.kind === 'video') (document.state.videoClips || []).forEach(update);
+  if (missing.kind === 'voice') (document.state.voiceovers || []).forEach(update);
+  if (missing.kind === 'camera') (document.state.facecams || []).forEach(update);
+  document.mediaPaths = ZoomCutCore.collectMediaPaths(document);
+}
+
+async function relinkMissingMedia(document, missingItems) {
+  for (const missing of missingItems || []) {
+    const replacement = await desktop.project.chooseReplacement(missing.name || missing.path);
+    if (replacement.canceled) return false;
+    replaceMissingPath(document, missing, replacement);
+  }
+  return true;
+}
+
+async function hydrateClip(clip, kind) {
+  const registered = await registerMediaSource(clip.sourcePath);
+  clip.url = registered.url;
+  if (kind === 'voice') clip.audio = new Audio(registered.url);
+  else {
+    const element = document.createElement('video');
+    element.src = registered.url; element.muted = true; element.playsInline = true; element.preload = 'auto';
+    clip.video = element;
+  }
+  return clip;
+}
+
+async function restoreProject(document, projectPath, recovered = false) {
+  ZoomCutCore.validateProject(document);
+  const base = await registerMediaSource(document.baseMedia.sourcePath);
+  loadVideoSource(base.url, { ...document.baseMedia, url: base.url }, null, async () => {
+    try {
+      const saved = document.state;
+      Object.assign(state, document.settings || {});
+      state.segments = saved.segments.map(x => ({ ...x }));
+      state.events = (saved.events || []).map(x => ({ ...x }));
+      state.taps = (saved.taps || []).map(x => ({ ...x }));
+      state.videoClips = await Promise.all((saved.videoClips || []).map(x => hydrateClip({ ...x }, 'video')));
+      state.voiceovers = await Promise.all((saved.voiceovers || []).map(x => hydrateClip({ ...x }, 'voice')));
+      state.facecams = await Promise.all((saved.facecams || []).map(x => hydrateClip({ ...x }, 'camera')));
+      state.videoLaneCount = saved.videoLaneCount || 1;
+      state.voiceLaneCount = saved.voiceLaneCount || 1;
+      state.cameraLaneCount = saved.cameraLaneCount || 1;
+      state.projectPath = projectPath || null;
+      state.projectCreatedAt = document.createdAt || null;
+      state.dirty = false;
+      nextId = Math.max(1, ...state.events.map(x => Number(x.id) + 1));
+      videoClipId = Math.max(1, ...state.videoClips.map(x => Number(x.id) + 1));
+      voiceId = Math.max(1, ...state.voiceovers.map(x => Number(x.id) + 1));
+      faceId = Math.max(1, ...state.facecams.map(x => Number(x.id) + 1));
+      applySettings(document.settings || {});
+      setChipRow('zoomStyleRow', 'zoomStyle', state.zoomStyle);
+      updateTimelineUI(); updateSegUI(); updateVoiceUI(); updateCameraUI(); requestRender();
+      setProjectStatus(recovered ? tr('projectRecovered') : tr('projectSaved'));
+    } catch (error) { showActionableError(error.message); }
+  });
+}
+
+async function openProject() {
+  if (!desktop) return;
+  try {
+    const result = await desktop.project.open();
+    if (result.canceled) return;
+    if (result.missing?.length && !await relinkMissingMedia(result.document, result.missing)) return;
+    await restoreProject(result.document, result.path, false);
+  } catch (error) { showActionableError(error.message); }
+}
+
+$('projectSaveBtn').onclick = saveProject;
+$('projectOpenBtn').onclick = openProject;
+if (desktop) {
+  $('projectOpenBtn').style.display = '';
+  $('projectSaveBtn').style.display = '';
+  setTimeout(async () => {
+    if (state.loaded) return;
+    const recovery = await desktop.project.recovery().catch(() => null);
+    if (!recovery || !confirm(state.lang === 'th' ? 'พบงานที่สำรองอัตโนมัติไว้ ต้องการกู้คืนหรือไม่?' : 'An autosaved project was found. Recover it?')) return;
+    if (recovery.missing?.length && !await relinkMissingMedia(recovery.document, recovery.missing)) return;
+    restoreProject(recovery.document, null, true);
+  }, 500);
+}
+document.addEventListener('change', e => { if (!e.target.closest('#langSel, #themeBtn')) markProjectDirty(); });
+document.addEventListener('pointerup', () => { if (state.loaded) markProjectDirty(); });
+window.addEventListener('beforeunload', () => { if (state.dirty) autosaveProject(); });
 
 // ---------- Camera math ----------
 // ID_CAM = กล้องพัก: ซูม 1 เท่า อยู่กึ่งกลางพื้นที่ crop (คำนวณสดเพราะขึ้นกับ crop)
@@ -2175,8 +2439,15 @@ function drawDebugOverlay(L, cam) {
 function drawFacecamOverlay(L) {
   if (!state.facecams.length || state.mode !== 'video') return;
   const outT = sourceToOutputTime(video.currentTime);
-  const active = state.facecams.find(c => outT >= clipOutStart(c) && outT <= clipOutStart(c) + clipOutDuration(c));
-  if (!active) return;
+  const activeClips = state.facecams
+    .filter(c => laneEnabled('camera', c.lane || 0) && outT >= clipOutStart(c) && outT <= clipOutStart(c) + clipOutDuration(c))
+    .sort((a, b) => (a.lane || 0) - (b.lane || 0));
+  const activeIds = new Set(activeClips.map(x => x.id));
+  for (const clip of state.facecams) if (!activeIds.has(clip.id) && clip.video && !clip.video.paused) clip.video.pause();
+  for (const active of activeClips) drawFacecamClip(active, L, outT);
+}
+
+function drawFacecamClip(active, L, outT) {
   const vid = active.video || document.createElement('video');
   if (!active.video) {
     vid.src = active.url; vid.muted = true; vid.playsInline = true;
@@ -2236,8 +2507,12 @@ function drawOverlayVideoClips(L) {
   if (!state.videoClips.length || state.mode !== 'video') return;
   const outT = sourceToOutputTime(video.currentTime);
   const active = state.videoClips
-    .filter(c => outT >= clipOutStart(c) && outT <= clipOutStart(c) + clipOutDuration(c))
+    .filter(c => laneEnabled('video', c.lane || 0) && outT >= clipOutStart(c) && outT <= clipOutStart(c) + clipOutDuration(c))
     .sort((a, b) => (a.lane || 0) - (b.lane || 0));
+  const activeIds = new Set(active.map(x => x.id));
+  for (const clip of state.videoClips) {
+    if (!activeIds.has(clip.id) && clip.video && !clip.video.paused) clip.video.pause();
+  }
   if (!active.length) return;
   const c = L.content;
   for (const clip of active) {
@@ -2256,9 +2531,12 @@ function drawOverlayVideoClips(L) {
     const va = vid.videoWidth / vid.videoHeight || 1;
     let dw = c.w, dh = dw / va;
     if (dh < c.h) { dh = c.h; dw = dh * va; }
-    const dx = c.x + (c.w - dw) / 2;
-    const dy = c.y + (c.h - dh) / 2;
+    const scale = (clip.scale ?? 100) / 100;
+    dw *= scale; dh *= scale;
+    const dx = c.x + (c.w - dw) * ((clip.posX ?? 50) / 100);
+    const dy = c.y + (c.h - dh) * ((clip.posY ?? 50) / 100);
     ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(1, clip.opacity ?? 1));
     roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
     ctx.clip();
     ctx.drawImage(vid, dx, dy, dw, dh);
@@ -2353,7 +2631,10 @@ function drawFrame(forExport = false) {
     roundRectPath(ctx, content.x, content.y, content.w, content.h, content.r);
   }
   ctx.clip();
-  ctx.drawImage(m.el, sr.sx, sr.sy, sr.sw, sr.sh, content.x, content.y, content.w, content.h);
+  const baseSegment = state.mode === 'video' ? segAt(video.currentTime) : null;
+  if (!baseSegment || laneEnabled('video', baseSegment.lane || 0)) {
+    ctx.drawImage(m.el, sr.sx, sr.sy, sr.sw, sr.sh, content.x, content.y, content.w, content.h);
+  }
   ctx.restore();
 
   drawOverlayVideoClips(L);
@@ -2369,6 +2650,7 @@ function loop() {
   if (state.loaded && state.mode === 'video' && !video.paused && !state.exporting) segPlaybackTick();
   if (state.loaded && (!video.paused || state.exporting)) drawFrame();
   if (state.loaded && !video.paused && !state.exporting) { updatePlayheadUI(); syncVoicePreview(); }
+  if (state.loaded && !state.exporting) syncBaseAudioLane();
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -2437,6 +2719,7 @@ function openShortcutHelp() {
     ['Q / W', state.lang === 'th' ? 'ตัดซ้าย/ขวาถึง playhead' : 'Trim left/right to playhead'],
     ['Delete', state.lang === 'th' ? 'ลบ item ที่เลือก' : 'Delete selected item'],
     ['⌘/Ctrl+Z', state.lang === 'th' ? 'Undo' : 'Undo'],
+    ['⌘/Ctrl+D', state.lang === 'th' ? 'ทำสำเนาคลิปที่เลือก' : 'Duplicate selected clip'],
     ['⇧⌘/Ctrl+Z', state.lang === 'th' ? 'Redo' : 'Redo'],
     ['← / →', state.lang === 'th' ? 'เลื่อน playhead 0.1 วิ' : 'Seek 0.1s'],
     ['⇧← / ⇧→', state.lang === 'th' ? 'เลื่อน playhead 1 วิ' : 'Seek 1s'],
@@ -2475,6 +2758,7 @@ document.addEventListener('keydown', e => {
   if (!state.loaded || state.mode !== 'video') return;
 
   if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redoEdit() : undoEdit(); return; }
+  if (mod && key === 'd') { e.preventDefault(); duplicateSelection(); return; }
   if ((mod && key === 'b') || key === 'b' || key === 'c') { e.preventDefault(); splitVideoClipAtPlayhead() || splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(); return; }
   if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); actionDeleteSelected(); return; }
@@ -2521,6 +2805,7 @@ const voiceRec = {
 };
 let exportAudioCtx = null;
 let videoAudioSourceNode = null;
+let videoAudioPreviewGain = null;
 
 function fmtTime(t) {
   const m = Math.floor(t / 60), s = (t % 60);
@@ -2683,6 +2968,8 @@ async function startVoiceover() {
       outDuration: Math.min(duration, Math.max(0.1, outputDuration() - voiceRec.start)),
       blob, url, peaks,
       lane: 0,
+      volume: 1,
+      muted: false,
       name: tr('voiceClip', voiceId - 1),
       audio: new Audio(url),
     });
@@ -2750,7 +3037,7 @@ function updateVoiceUI() {
   for (let lane = 0; lane < needed; lane++) {
     const row = document.createElement('div');
     row.className = 'lane-row';
-    row.innerHTML = `<div class="lane-label" data-lane-base="voice">${tr('voiceLane')} ${lane + 1}</div><div class="voice-track" data-lane="${lane}"></div>`;
+    row.innerHTML = `${laneLabelHtml('voice', lane, 'voiceLane')}<div class="voice-track" data-lane="${lane}"></div>`;
     const track = row.querySelector('.voice-track');
     for (const v of state.voiceovers.filter(x => (x.lane || 0) === lane)) {
       const el = document.createElement('div');
@@ -2773,6 +3060,9 @@ function updateVoiceUI() {
     panel.classList.add('visible');
     $('voiceEditLabel').textContent = `🎙 ${sel.name || tr('voiceClip', sel.id)} ${fmtTime(voiceOutStart(sel))}–${fmtTime(voiceOutStart(sel) + voiceOutDuration(sel))}`;
     renderLaneOptions($('voiceLane'), state.voiceLaneCount, sel.lane || 0, 'voiceLane');
+    $('voiceVolume').value = sel.volume ?? 1;
+    $('voiceVolumeVal').textContent = `${Math.round((sel.volume ?? 1) * 100)}%`;
+    $('voiceMuted').checked = Boolean(sel.muted);
   } else {
     panel.classList.remove('visible');
   }
@@ -2792,6 +3082,7 @@ $('voiceTrackGroup').addEventListener('pointerdown', e => {
   selectOnly('voice', parseInt(clip.dataset.id));
   const v = state.voiceovers.find(x => x.id === state.selectedVoiceId);
   if (!v) return;
+  if (laneConfig('voice', v.lane || 0).locked) return;
   const track = clip.closest('.voice-track');
   const bounds = track.getBoundingClientRect();
   const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
@@ -2813,9 +3104,9 @@ $('voiceTrackGroup').addEventListener('pointermove', e => {
   const bounds = track.getBoundingClientRect();
   const sourceT = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
   const outT = sourceToOutputTime(sourceT);
-  if (voiceDrag.edge === 'left') setClipOutStart(voiceDrag.clip, outT);
-  else if (voiceDrag.edge === 'right') setClipOutEnd(voiceDrag.clip, outT);
-  else moveClipOut(voiceDrag.clip, outT - voiceDrag.offset);
+  if (voiceDrag.edge === 'left') setClipOutStart(voiceDrag.clip, snapOutTime(outT, bounds, voiceDrag.clip));
+  else if (voiceDrag.edge === 'right') setClipOutEnd(voiceDrag.clip, snapOutTime(outT, bounds, voiceDrag.clip));
+  else moveClipOut(voiceDrag.clip, snapOutTime(outT - voiceDrag.offset, bounds, voiceDrag.clip));
   updateVoiceUI();
 });
 $('voiceTrackGroup').addEventListener('pointerup', e => {
@@ -2841,6 +3132,19 @@ $('voiceLane').onchange = e => {
   v.lane = parseInt(e.target.value, 10) || 0;
   updateVoiceUI();
 };
+$('voiceVolume').oninput = e => {
+  const clip = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+  if (!clip) return;
+  clip.volume = parseFloat(e.target.value);
+  $('voiceVolumeVal').textContent = `${Math.round(clip.volume * 100)}%`;
+  if (clip.audio) clip.audio.volume = Math.min(1, clip.volume);
+};
+$('voiceMuted').onchange = e => {
+  const clip = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+  if (!clip) return;
+  clip.muted = e.target.checked;
+  if (clip.audio) clip.audio.muted = clip.muted;
+};
 function stopVoicePreview() {
   for (const v of state.voiceovers) {
     if (!v.audio) continue;
@@ -2853,11 +3157,13 @@ function syncVoicePreview(force = false) {
   for (const v of state.voiceovers) {
     if (!v.audio) v.audio = new Audio(v.url);
     const start = voiceOutStart(v), dur = voiceOutDuration(v);
-    const inClip = !video.paused && outT >= start && outT <= start + dur && !!segAt(video.currentTime);
+    const inClip = !video.paused && laneEnabled('voice', v.lane || 0, 'audio') && outT >= start && outT <= start + dur && !!segAt(video.currentTime);
     if (!inClip) { v.audio.pause(); continue; }
     const off = Math.max(0, outT - start);
     if (force || Math.abs(v.audio.currentTime - off) > 0.12) v.audio.currentTime = off;
     v.audio.playbackRate = 1;
+    v.audio.volume = Math.min(1, v.volume ?? 1);
+    v.audio.muted = Boolean(v.muted);
     if (v.audio.paused) v.audio.play().catch(() => {});
   }
 }
@@ -2871,7 +3177,7 @@ function updateCameraUI() {
   for (let lane = 0; lane < needed; lane++) {
     const row = document.createElement('div');
     row.className = 'lane-row';
-    row.innerHTML = `<div class="lane-label" data-lane-base="camera">${tr('cameraLane')} ${lane + 1}</div><div class="camera-track" data-lane="${lane}"></div>`;
+    row.innerHTML = `${laneLabelHtml('camera', lane, 'cameraLane')}<div class="camera-track" data-lane="${lane}"></div>`;
     const track = row.querySelector('.camera-track');
     for (const c of state.facecams.filter(x => (x.lane || 0) === lane)) {
       const outStart = clipOutStart(c);
@@ -2916,6 +3222,7 @@ $('cameraTrackGroup').addEventListener('pointerdown', e => {
   selectOnly('camera', parseInt(clip.dataset.id));
   const c = state.facecams.find(x => x.id === state.selectedFaceId);
   if (!c) return;
+  if (laneConfig('camera', c.lane || 0).locked) return;
   const track = clip.closest('.camera-track');
   const bounds = track.getBoundingClientRect();
   const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
@@ -2937,9 +3244,9 @@ $('cameraTrackGroup').addEventListener('pointermove', e => {
   const bounds = track.getBoundingClientRect();
   const sourceT = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
   const outT = sourceToOutputTime(sourceT);
-  if (camDrag.edge === 'left') setClipOutStart(camDrag.clip, outT);
-  else if (camDrag.edge === 'right') setClipOutEnd(camDrag.clip, outT);
-  else moveClipOut(camDrag.clip, outT - camDrag.offset);
+  if (camDrag.edge === 'left') setClipOutStart(camDrag.clip, snapOutTime(outT, bounds, camDrag.clip));
+  else if (camDrag.edge === 'right') setClipOutEnd(camDrag.clip, snapOutTime(outT, bounds, camDrag.clip));
+  else moveClipOut(camDrag.clip, snapOutTime(outT - camDrag.offset, bounds, camDrag.clip));
   updateCameraUI(); requestRender();
 });
 $('cameraTrackGroup').addEventListener('pointerup', e => {
@@ -3047,6 +3354,14 @@ function voiceOutDuration(v) {
 function clipMediaOffset(c) { return c.mediaOffset || 0; }
 function clipOutStart(c) { return c.outStart !== undefined ? c.outStart : voiceOutStart(c); }
 function clipOutDuration(c) { return c.outDuration !== undefined ? c.outDuration : voiceOutDuration(c); }
+function snapOutTime(value, bounds, exclude) {
+  const candidates = [0, outputDuration(), sourceToOutputTime(video.currentTime)];
+  for (const clip of [...state.videoClips, ...state.voiceovers, ...state.facecams]) {
+    if (clip === exclude) continue;
+    candidates.push(clipOutStart(clip), clipOutStart(clip) + clipOutDuration(clip));
+  }
+  return ZoomCutCore.snapTime(value, candidates, outputDuration() * 8 / Math.max(1, bounds?.width || 1));
+}
 function setClipOutStart(c, start) {
   const end = clipOutStart(c) + clipOutDuration(c);
   c.outStart = Math.max(0, Math.min(start, end - 0.1));
@@ -3145,6 +3460,39 @@ function actionDeleteSelected() {
   }
   return false;
 }
+
+function duplicateSelection() {
+  commitHistory();
+  const offset = 0.2;
+  if (state.selectedVideoId) {
+    const source = state.videoClips.find(x => x.id === state.selectedVideoId);
+    if (!source) return;
+    const element = document.createElement('video');
+    element.src = source.url; element.muted = true; element.playsInline = true;
+    const copy = { ...source, id: videoClipId++, outStart: Math.min(outputDuration() - clipOutDuration(source), clipOutStart(source) + offset), video: element, audioSourceNode: undefined };
+    state.videoClips.push(copy); selectOnly('videoClip', copy.id); updateSegUI(); requestRender(); return;
+  }
+  if (state.selectedVoiceId) {
+    const source = state.voiceovers.find(x => x.id === state.selectedVoiceId);
+    if (!source) return;
+    const copy = { ...source, id: voiceId++, outStart: Math.min(outputDuration() - clipOutDuration(source), clipOutStart(source) + offset), audio: new Audio(source.url) };
+    state.voiceovers.push(copy); selectOnly('voice', copy.id); updateVoiceUI(); return;
+  }
+  if (state.selectedFaceId) {
+    const source = state.facecams.find(x => x.id === state.selectedFaceId);
+    if (!source) return;
+    const element = document.createElement('video');
+    element.src = source.url; element.muted = true; element.playsInline = true;
+    const copy = { ...source, id: faceId++, outStart: Math.min(outputDuration() - clipOutDuration(source), clipOutStart(source) + offset), video: element };
+    state.facecams.push(copy); selectOnly('camera', copy.id); updateCameraUI(); requestRender(); return;
+  }
+  if (state.selectedId) {
+    const source = state.events.find(x => x.id === state.selectedId);
+    if (!source) return;
+    const copy = { ...source, id: nextId++, start: Math.min(video.duration - eventDuration(source), source.start + offset) };
+    state.events.push(copy); state.events.sort((a, b) => a.start - b.start); selectOnly('marker', copy.id); updateTimelineUI(); requestRender();
+  }
+}
 function splitVideoClipAtPlayhead() {
   const outT = sourceToOutputTime(video.currentTime);
   const c = state.videoClips.find(x => outT > clipOutStart(x) + 0.05 && outT < clipOutStart(x) + clipOutDuration(x) - 0.05);
@@ -3215,6 +3563,9 @@ function setTimelineZoom(next) {
 $('addVideoLane').onclick = () => { state.videoLaneCount++; updateSegUI(); };
 $('addVoiceLane').onclick = () => { state.voiceLaneCount++; updateVoiceUI(); };
 $('addCameraLane').onclick = () => { state.cameraLaneCount++; updateCameraUI(); };
+bindLaneTools('videoTrackGroup', 'video', updateSegUI);
+bindLaneTools('voiceTrackGroup', 'voice', updateVoiceUI);
+bindLaneTools('cameraTrackGroup', 'camera', updateCameraUI);
 
 function updateSegUI() {
   const group = $('videoTrackGroup');
@@ -3225,7 +3576,7 @@ function updateSegUI() {
   for (let lane = 0; lane < needed; lane++) {
     const row = document.createElement('div');
     row.className = 'lane-row';
-    row.innerHTML = `<div class="lane-label" data-lane-base="video">${tr('videoLane')} ${lane + 1}</div><div class="seg-track" data-lane="${lane}"></div>`;
+    row.innerHTML = `${laneLabelHtml('video', lane, 'videoLane')}<div class="seg-track" data-lane="${lane}"></div>`;
     const track = row.querySelector('.seg-track');
     for (const s of state.segments.filter(x => (x.lane || 0) === lane)) {
       const el = document.createElement('div');
@@ -3264,19 +3615,49 @@ function updateSegUI() {
     const speedWrap = $('segSpeed').closest('span');
     if (sel) {
       speedWrap.style.display = '';
+      $('overlayControls').style.display = 'none';
       $('segSpeed').value = String(sel.speed);
       renderLaneOptions($('segLane'), state.videoLaneCount, sel.lane || 0, 'videoLane');
-      $('segEditLabel').textContent = `🎞 ท่อน ${fmtTime(sel.start)}–${fmtTime(sel.end)}`;
+      $('segEditLabel').textContent = `${tr('selectedSegment')} ${fmtTime(sel.start)}–${fmtTime(sel.end)}`;
     } else {
       speedWrap.style.display = 'none';
+      $('overlayControls').style.display = '';
+      $('overlayScale').value = clipSel.scale ?? 100;
+      $('overlayScaleVal').textContent = `${clipSel.scale ?? 100}%`;
+      $('overlayX').value = clipSel.posX ?? 50;
+      $('overlayY').value = clipSel.posY ?? 50;
+      $('overlayOpacity').value = clipSel.opacity ?? 1;
+      $('overlayVolume').value = clipSel.volume ?? 1;
+      $('overlayMuted').checked = Boolean(clipSel.muted);
       renderLaneOptions($('segLane'), state.videoLaneCount, clipSel.lane || 0, 'videoLane');
       $('segEditLabel').textContent = `🎞 ${tr('selectedOverlayVideo')} ${fmtTime(clipOutStart(clipSel))}–${fmtTime(clipOutStart(clipSel) + clipOutDuration(clipSel))}`;
     }
   } else {
     panel.classList.remove('visible');
+    $('overlayControls').style.display = 'none';
   }
   updatePlayheadUI();
 }
+
+function bindOverlayControl(id, key, format) {
+  $(id).addEventListener('input', e => {
+    const clip = state.videoClips.find(x => x.id === state.selectedVideoId);
+    if (!clip) return;
+    clip[key] = parseFloat(e.target.value);
+    if (format) format(clip[key]);
+    requestRender(); markProjectDirty();
+  });
+}
+bindOverlayControl('overlayScale', 'scale', value => $('overlayScaleVal').textContent = `${Math.round(value)}%`);
+bindOverlayControl('overlayX', 'posX');
+bindOverlayControl('overlayY', 'posY');
+bindOverlayControl('overlayOpacity', 'opacity');
+bindOverlayControl('overlayVolume', 'volume');
+$('overlayMuted').onchange = e => {
+  const clip = state.videoClips.find(x => x.id === state.selectedVideoId);
+  if (!clip) return;
+  clip.muted = e.target.checked; markProjectDirty();
+};
 
 function updateRulerUI() {
   const ruler = $('ruler');
@@ -3316,6 +3697,7 @@ $('videoTrackGroup').addEventListener('pointerdown', e => {
     ? state.videoClips.find(x => x.id === state.selectedVideoId)
     : state.segments.find(x => x.id === state.selectedSeg);
   if (!s) return;
+  if (laneConfig('video', s.lane || 0).locked) return;
   const track = block.closest('.seg-track');
   const bounds = track.getBoundingClientRect();
   const edge = e.target.closest('.seg-handle')?.dataset.edge || null;
@@ -3340,9 +3722,9 @@ $('videoTrackGroup').addEventListener('pointermove', e => {
   const raw = Math.min(video.duration, Math.max(0, (e.clientX - bounds.left) / bounds.width * video.duration));
   if (segDrag.kind === 'clip') {
     const outT = sourceToOutputTime(raw);
-    if (segDrag.edge === 'left') setClipOutStart(segDrag.s, outT);
-    else if (segDrag.edge === 'right') setClipOutEnd(segDrag.s, outT);
-    else moveClipOut(segDrag.s, outT - segDrag.offset);
+    if (segDrag.edge === 'left') setClipOutStart(segDrag.s, snapOutTime(outT, bounds, segDrag.s));
+    else if (segDrag.edge === 'right') setClipOutEnd(segDrag.s, snapOutTime(outT, bounds, segDrag.s));
+    else moveClipOut(segDrag.s, snapOutTime(outT - segDrag.offset, bounds, segDrag.s));
     video.currentTime = outputToSourceTime(clipOutStart(segDrag.s));
   } else if (segDrag.edge === 'left') {
     segDrag.s.start = raw;
@@ -3577,9 +3959,16 @@ $('newBtn').onclick = () => {
     videoLaneCount: 1,
     voiceLaneCount: 1,
     cameraLaneCount: 1,
+    laneSettings: { video: [], voice: [], camera: [] },
     crop: { t: 0, r: 0, b: 0, l: 0 },
     timelineZoom: 1,
+    baseMedia: null, projectPath: null, projectCreatedAt: null, dirty: false,
   });
+  clearTimeout(autosaveTimer);
+  if (desktop) desktop.project.clearRecovery().catch(() => {});
+  if (desktop) desktop.project.resetCurrent().catch(() => {});
+  $('projectSaveBtn').disabled = true;
+  setProjectStatus('');
   syncCropUI();
   canvas.style.display = 'none';
   $('dropHint').style.display = '';
@@ -3588,6 +3977,7 @@ $('newBtn').onclick = () => {
   $('voiceBtn').disabled = true;
   $('quickVoice').disabled = true;
   $('exportBtn').disabled = true;
+  $('videoExportPreset').disabled = true;
   $('snapBtn').disabled = true;
   $('exportBtn').textContent = tr('exportVideo');
   $('imgExportSec').style.display = 'none';
@@ -3629,12 +4019,27 @@ async function prepareVoiceBuffers(audioCtx) {
   const out = [];
   for (const v of state.voiceovers) {
     try {
-      const arr = await v.blob.arrayBuffer();
+      const arr = v.blob ? await v.blob.arrayBuffer() : await (await fetch(v.url)).arrayBuffer();
       const buffer = await audioCtx.decodeAudioData(arr.slice(0));
       out.push({ ...v, buffer });
     } catch (e) {}
   }
   return out;
+}
+function connectOverlayAudio(audioCtx, dest) {
+  const connected = [];
+  for (const clip of state.videoClips) {
+    if (!clip.video) continue;
+    try {
+      if (!clip.audioSourceNode) clip.audioSourceNode = audioCtx.createMediaElementSource(clip.video);
+      const gain = audioCtx.createGain();
+      gain.gain.value = clip.muted || !laneEnabled('video', clip.lane || 0, 'audio') ? 0 : (clip.volume ?? 1);
+      clip.audioSourceNode.connect(gain).connect(dest);
+      clip.video.muted = false;
+      connected.push({ clip, gain });
+    } catch {}
+  }
+  return connected;
 }
 function getExportAudioContext() {
   const AC = window.AudioContext || window.webkitAudioContext;
@@ -3644,15 +4049,22 @@ function getExportAudioContext() {
 function getVideoAudioSource(audioCtx) {
   if (!videoAudioSourceNode) {
     videoAudioSourceNode = audioCtx.createMediaElementSource(video);
-    videoAudioSourceNode.connect(audioCtx.destination);
+    videoAudioPreviewGain = audioCtx.createGain();
+    videoAudioSourceNode.connect(videoAudioPreviewGain).connect(audioCtx.destination);
   }
   return videoAudioSourceNode;
+}
+function syncBaseAudioLane() {
+  if (!videoAudioPreviewGain) return;
+  const segment = segAt(video.currentTime);
+  videoAudioPreviewGain.gain.value = segment && laneEnabled('video', segment.lane || 0, 'audio') ? 1 : 0;
 }
 function scheduleVoiceoversForSegment(audioCtx, dest, voiceBuffers, seg) {
   const now = audioCtx.currentTime + 0.03;
   const segOutStart = segmentOutputStart(seg);
   const segOutEnd = segOutStart + (seg.end - seg.start) / seg.speed;
   for (const v of voiceBuffers) {
+    if (!laneEnabled('voice', v.lane || 0, 'audio')) continue;
     const vStart = voiceOutStart(v);
     const vEnd = vStart + voiceOutDuration(v);
     const overlapStart = Math.max(vStart, segOutStart);
@@ -3662,7 +4074,7 @@ function scheduleVoiceoversForSegment(audioCtx, dest, voiceBuffers, seg) {
     source.buffer = v.buffer;
     source.playbackRate.value = 1;
     const gain = audioCtx.createGain();
-    gain.gain.value = 1;
+    gain.gain.value = v.muted ? 0 : (v.volume ?? 1);
     source.connect(gain).connect(dest);
     const when = now + (overlapStart - segOutStart);
     const offset = Math.max(0, overlapStart - vStart);
@@ -3672,112 +4084,133 @@ function scheduleVoiceoversForSegment(audioCtx, dest, voiceBuffers, seg) {
 }
 
 // ---------- Export ----------
+let exportAbortController = null;
+$('exportCancel').onclick = () => {
+  if (!state.exporting) return;
+  state.exportCancelRequested = true;
+  if (exportAbortController) exportAbortController.abort();
+  if (state.exportJobId) api('/api/export/cancel', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: state.exportJobId }),
+  }, 3000).catch(() => {});
+};
 $('exportBtn').onclick = async () => {
   if (!state.loaded || state.exporting) return;
   if (state.mode === 'image') { exportPNG(state.exportScale); return; }
+  let exportTarget = null;
+  if (desktop) {
+    exportTarget = await desktop.export.choosePath('zoomcut-export.mp4');
+    if (exportTarget.canceled) return;
+  }
   state.exporting = true;
+  state.exportCancelRequested = false;
+  state.exportJobId = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/[^a-z0-9-]/gi, '');
   video.pause();
   $('exportOverlay').classList.add('visible');
   $('exportProgress').style.width = '0%';
-
-  // pick best supported container
-  const candidates = [
-    'video/mp4;codecs=avc1.640028,mp4a.40.2',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm',
-  ];
-  const mime = candidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
-  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
-
-  const stream = canvas.captureStream(60);
-
-  // include original audio if present
+  const originalCanvas = { width: canvas.width, height: canvas.height };
+  const scale = state.videoExportScale || 1;
+  canvas.width = Math.round(canvas.width * scale);
+  canvas.height = Math.round(canvas.height * scale);
+  requestRender();
   let audioCtx = null;
   let voiceBuffers = [];
   let audioDest = null;
+  let baseExportGain = null;
+  let overlayAudio = [];
+  let rec = null;
   try {
+    const candidates = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+    const mime = candidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
+    const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+    const stream = canvas.captureStream(60);
     audioCtx = getExportAudioContext();
     if (audioCtx.state === 'suspended') await audioCtx.resume();
     const src = getVideoAudioSource(audioCtx);
     audioDest = audioCtx.createMediaStreamDestination();
-    src.connect(audioDest);
+    baseExportGain = audioCtx.createGain();
+    src.connect(baseExportGain).connect(audioDest);
     voiceBuffers = await prepareVoiceBuffers(audioCtx);
+    overlayAudio = connectOverlayAudio(audioCtx, audioDest);
     audioDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
-  } catch (err) { /* video already connected or no audio — fine */ }
-
-  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 12_000_000 });
-  const chunks = [];
-  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-
-  const done = new Promise(res => { rec.onstop = res; });
-
-  const segs = state.segments;
-  const totalOut = outputDuration();
-  let doneOut = 0; // ความยาว output ที่เรนเดอร์ไปแล้ว (วินาที)
-
-  const seekTo = t => new Promise(res => {
-    video.currentTime = t;
-    video.addEventListener('seeked', res, { once: true });
-  });
-
-  await seekTo(segs[0].start);
-  rec.start(250);
-
-  // ไล่เรนเดอร์ทีละท่อน ข้ามช่องที่ถูกตัด
-  for (let i = 0; i < segs.length; i++) {
-    const s = segs[i];
-    if (Math.abs(video.currentTime - s.start) > 0.05) await seekTo(s.start);
-    video.playbackRate = s.speed;
-    if (audioCtx && audioDest && voiceBuffers.length) scheduleVoiceoversForSegment(audioCtx, audioDest, voiceBuffers, s);
-    await video.play();
-    const segBase = doneOut;
-    // ใช้ทั้ง rAF (ลื่นตอนแท็บ active) และ setInterval (ทำงานต่อแม้สลับแท็บ) เป็น backup
-    await new Promise(res => {
-      let finished = false;
-      const finish = () => { if (finished) return; finished = true; clearInterval(iv); res(); };
-      const check = () => {
-        if (finished) return;
-        if (video.ended || video.currentTime >= s.end - 0.02) return finish();
-        doneOut = segBase + (video.currentTime - s.start) / s.speed;
-        const p = Math.min(100, doneOut / totalOut * 100);
-        $('exportProgress').style.width = p + '%';
-        $('exportSub').textContent =
-          tr('exportSegment', i + 1, segs.length, fmtTime(doneOut), fmtTime(totalOut), s.speed);
-        if (!finished) requestAnimationFrame(check);
-      };
-      const iv = setInterval(check, 200);
-      requestAnimationFrame(check);
+    rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: Math.round(12_000_000 * scale * scale) });
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const done = new Promise((resolve, reject) => { rec.onstop = resolve; rec.onerror = e => reject(e.error || new Error('MediaRecorder failed')); });
+    const segs = state.segments;
+    const totalOut = outputDuration();
+    let doneOut = 0;
+    const seekTo = t => new Promise(resolve => {
+      video.currentTime = t;
+      if (Math.abs(video.currentTime - t) < 0.002) return resolve();
+      video.addEventListener('seeked', resolve, { once: true });
     });
-    video.pause();
-    doneOut = segBase + (s.end - s.start) / s.speed;
-  }
-
-  rec.stop();
-  await done;
-
-  let blob = new Blob(chunks, { type: mime });
-  let outExt = ext;
-  // แปลงผ่าน ffmpeg ในแอป (ถ้ามี) → MP4 frame rate คงที่ กันไฟล์ค้าง/เปิดได้แค่ช่วงแรก
-  try {
+    await seekTo(segs[0].start);
+    rec.start(250);
+    for (let i = 0; i < segs.length && !state.exportCancelRequested; i++) {
+      const segment = segs[i];
+      if (Math.abs(video.currentTime - segment.start) > 0.05) await seekTo(segment.start);
+      video.playbackRate = segment.speed;
+      baseExportGain.gain.value = laneEnabled('video', segment.lane || 0, 'audio') ? 1 : 0;
+      if (voiceBuffers.length) scheduleVoiceoversForSegment(audioCtx, audioDest, voiceBuffers, segment);
+      await video.play();
+      const segBase = doneOut;
+      await new Promise(resolve => {
+        let finished = false;
+        const finish = () => { if (finished) return; finished = true; clearInterval(interval); resolve(); };
+        const check = () => {
+          if (finished) return;
+          if (state.exportCancelRequested || video.ended || video.currentTime >= segment.end - 0.02) return finish();
+          doneOut = segBase + (video.currentTime - segment.start) / segment.speed;
+          $('exportProgress').style.width = Math.min(100, doneOut / totalOut * 100) + '%';
+          $('exportSub').textContent = tr('exportSegment', i + 1, segs.length, fmtTime(doneOut), fmtTime(totalOut), segment.speed);
+          requestAnimationFrame(check);
+        };
+        const interval = setInterval(check, 200);
+        requestAnimationFrame(check);
+      });
+      video.pause();
+      doneOut = segBase + (segment.end - segment.start) / segment.speed;
+    }
+    rec.stop();
+    await done;
+    if (state.exportCancelRequested) return;
+    const blob = new Blob(chunks, { type: mime });
     $('exportSub').textContent = tr('exportRemuxing');
-    const rr = await fetch('/api/remux?ext=' + ext, {
-      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: blob,
-    });
-    if (rr.ok) { blob = await rr.blob(); outExt = 'mp4'; }
-  } catch (e) { /* เว็บ (ไม่มี ffmpeg) → ใช้ไฟล์เดิม */ }
-
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `zoomcut-export.${outExt}`;
-  a.click();
-
-  $('exportOverlay').classList.remove('visible');
-  state.exporting = false;
-  if (videoAudioSourceNode && audioDest) {
-    try { videoAudioSourceNode.disconnect(audioDest); } catch {}
+    if (desktop && exportTarget) {
+      exportAbortController = new AbortController();
+      const query = new URLSearchParams({ ext, target: exportTarget.id, job: state.exportJobId });
+      const response = await fetch('/api/remux?' + query, {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-ZoomCut-Token': API_TOKEN },
+        body: blob, signal: exportAbortController.signal,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Export failed');
+      setProjectStatus(result.path);
+    } else {
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `zoomcut-export.${ext}`;
+      link.click();
+    }
+  } catch (error) {
+    if (!state.exportCancelRequested && error.name !== 'AbortError') showActionableError(error.message);
+  } finally {
+    video.pause();
+    if (rec && rec.state !== 'inactive') try { rec.stop(); } catch {}
+    if (videoAudioSourceNode && baseExportGain) try { videoAudioSourceNode.disconnect(baseExportGain); baseExportGain.disconnect(); } catch {}
+    for (const item of overlayAudio) {
+      try { item.clip.audioSourceNode.disconnect(item.gain); item.gain.disconnect(); } catch {}
+      item.clip.video.muted = true;
+    }
+    canvas.width = originalCanvas.width;
+    canvas.height = originalCanvas.height;
+    $('exportOverlay').classList.remove('visible');
+    state.exporting = false;
+    state.exportCancelRequested = false;
+    state.exportJobId = null;
+    exportAbortController = null;
+    requestRender();
   }
-  requestRender();
 };
 
 // ---------- อัดหน้าจอ iPhone จากปุ่มในแอป (ผ่าน serve.py) ----------
@@ -3863,7 +4296,9 @@ window.addEventListener('resize', applyStoredPanelSizes);
 async function api(path, opts = {}, timeoutMs = 15000) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  const r = await fetch(path, { ...opts, signal: opts.signal || ctrl.signal }).finally(() => clearTimeout(timer));
+  const headers = { ...(opts.headers || {}) };
+  if (API_TOKEN) headers['X-ZoomCut-Token'] = API_TOKEN;
+  const r = await fetch(path, { ...opts, headers, signal: opts.signal || ctrl.signal }).finally(() => clearTimeout(timer));
   return { ok: r.ok, data: await r.json().catch(() => ({})) };
 }
 
@@ -3940,11 +4375,11 @@ async function startSmartRecording() {
     openSourcePicker();
     return;
   }
-  const android = (data.androidDevices || [])[0];
-  if (android) {
-    startRecording({ androidSerial: android.serial });
-    return;
-  }
+  let lastTarget = null;
+  try { lastTarget = JSON.parse(localStorage.getItem('zoomcut-last-record-target') || 'null'); } catch {}
+  if (lastTarget?.androidSerial && (data.androidDevices || []).some(x => x.serial === lastTarget.androidSerial)) return startRecording(lastTarget);
+  if (lastTarget?.windowId && (data.windows || []).some(x => x.id === lastTarget.windowId)) return startRecording(lastTarget);
+  if (lastTarget?.screenIndex && (data.displays || []).some(x => x.index === lastTarget.screenIndex)) return startRecording(lastTarget);
   const iphone = (data.windows || []).find(w => /iphone/i.test(`${w.app || ''} ${w.title || ''}`));
   if (iphone) {
     startRecording({ windowId: iphone.id });
@@ -3955,6 +4390,8 @@ async function startSmartRecording() {
     startRecording({ screenIndex: mainDisplay.index });
     return;
   }
+  const android = (data.androidDevices || [])[0];
+  if (android) return startRecording({ androidSerial: android.serial });
   openSourcePicker();
 }
 
@@ -4015,8 +4452,38 @@ $('pickerOverlay').addEventListener('click', e => {
   if (e.target === $('pickerOverlay')) $('pickerOverlay').classList.remove('visible');
 });
 
+function recordingCountdown(seconds = 3) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(5,7,12,.62);display:grid;place-items:center;z-index:300';
+    overlay.innerHTML = `<div style="text-align:center"><div data-count style="font-size:72px;font-weight:800">${seconds}</div><button class="btn" data-cancel>${tr('cancel')}</button></div>`;
+    document.body.appendChild(overlay);
+    let remaining = seconds;
+    const finish = value => { clearInterval(timer); overlay.remove(); resolve(value); };
+    overlay.querySelector('[data-cancel]').onclick = () => finish(false);
+    const timer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) finish(true);
+      else overlay.querySelector('[data-count]').textContent = remaining;
+    }, 1000);
+  });
+}
+
+async function recordingPreflight(target) {
+  if (!desktop || target.androidSerial) return true;
+  const permissions = await desktop.system.permissions().catch(() => null);
+  if (permissions && ['denied', 'restricted'].includes(permissions.screen)) {
+    alert(state.lang === 'th' ? 'ZoomCut ยังไม่มีสิทธิ์อัดหน้าจอ ระบบจะเปิดหน้าตั้งค่าให้' : 'ZoomCut does not have Screen Recording access. System Settings will open.');
+    await desktop.system.openPrivacy('screen');
+    return false;
+  }
+  return true;
+}
+
 async function startRecording(target) {
   $('pickerOverlay').classList.remove('visible');
+  if (!await recordingPreflight(target)) return;
+  if (!await recordingCountdown(3)) return;
   recState.recording = true;
   recBtn.classList.add('recording');
   recBtn.textContent = tr('recStarting');
@@ -4030,6 +4497,8 @@ async function startRecording(target) {
       body: JSON.stringify(target),
     }, 15000);
     if (!ok) throw new Error(data.error || (state.lang === 'th' ? 'เริ่มอัดไม่ได้' : 'Could not start recording'));
+    localStorage.setItem('zoomcut-last-record-target', JSON.stringify(target));
+    if (desktop) desktop.system.recordingIndicator(true).catch(() => {});
     pollRecState();
   } catch (e) {
     clearInterval(recState.poller);
@@ -4038,6 +4507,7 @@ async function startRecording(target) {
     recBtn.classList.remove('recording');
     $('quickRecord').classList.remove('recording');
     recBtn.textContent = tr('record');
+    if (desktop) desktop.system.recordingIndicator(false).catch(() => {});
     await api('/api/record/stop', { method: 'POST' }, 5000).catch(() => {});
     showActionableError((state.lang === 'th'
       ? 'เริ่มอัดไม่สำเร็จหรือใช้เวลานานเกินไป:\n'
@@ -4071,6 +4541,7 @@ async function pollRecState() {
   recBtn.classList.remove('recording');
   $('quickRecord').classList.remove('recording');
   recBtn.textContent = tr('record');
+  if (desktop) desktop.system.recordingIndicator(false).catch(() => {});
   if (data.error) {
     showActionableError((state.lang === 'th' ? 'อัดไม่สำเร็จ:\n' : 'Recording failed:\n') + data.error);
     return;
@@ -4082,10 +4553,20 @@ async function loadFromServer(base) {
   // รองรับทั้ง "recordings/recording-xxx" (autoload) และ "recording-xxx" (จากสถานะอัด)
   const p = base.includes('/') ? base : 'recordings/' + base;
   try {
-    const vr = await fetch('/' + p + '.mp4');
+    if (desktop) {
+      const cleanBase = p.split('/').pop();
+      const media = await desktop.project.registerRecording(cleanBase);
+      const jr = media.clicksUrl ? await fetch(media.clicksUrl) : { ok: false };
+      const jfile = jr.ok ? new File([await jr.blob()], 'clicks.json') : null;
+      loadVideoSource(media.url, { sourcePath: media.path, name: cleanBase + '.mp4', type: 'video/mp4' }, jfile);
+      return;
+    }
+    const token = new URLSearchParams(location.search).get('token') || '';
+    const auth = token ? `?token=${encodeURIComponent(token)}` : '';
+    const vr = await fetch('/' + p + '.mp4' + auth);
     if (!vr.ok) { alert((state.lang === 'th' ? 'โหลดวิดีโอไม่สำเร็จ' : 'Could not load video') + ' (' + vr.status + ') — ' + p + '.mp4'); return; }
     const vfile = new File([await vr.blob()], p.split('/').pop() + '.mp4', { type: 'video/mp4' });
-    const jr = await fetch('/' + p + '.clicks.json');
+    const jr = await fetch('/' + p + '.clicks.json' + auth);
     const jfile = jr.ok ? new File([await jr.blob()], 'clicks.json') : null;
     loadFile(vfile, jfile);
   } catch (e) { alert((state.lang === 'th' ? 'โหลดวิดีโอผิดพลาด: ' : 'Video load error: ') + e.message); }

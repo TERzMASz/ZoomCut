@@ -4,7 +4,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
+const { createApiToken, safeStaticPath, readJsonBody, streamRequestToFile, normalizeRecordingOptions } = require('./security');
 
 // แอป GUI (เปิดจาก Finder) มี PATH จำกัด ไม่รวม /opt/homebrew/bin → ต้องระบุ path ให้ชัด
 function platformKey() {
@@ -575,17 +577,95 @@ function recordState() {
 }
 
 // ---------- HTTP server ----------
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.mp4': 'video/mp4', '.png': 'image/png' };
+const MIME = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8', '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm',
+  '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.png': 'image/png',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+};
 
 function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
   webRoot = webRoot || path.join(__dirname, '..');
   recordingsDir = recordingsDir || path.join(webRoot, 'recordings');
+  const apiToken = createApiToken();
+  const mediaPaths = new Map();
+  const exportTargets = new Map();
+  const exportJobs = new Map();
+  const maxExportBytes = Math.max(256 * 1024 * 1024, Number(process.env.ZOOMCUT_MAX_EXPORT_BYTES) || 8 * 1024 * 1024 * 1024);
+
+  const registerMediaPath = (filePath) => {
+    const resolved = path.resolve(String(filePath || ''));
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Media file not found');
+    const id = crypto.randomBytes(18).toString('hex');
+    mediaPaths.set(id, resolved);
+    return { id, url: `/media/${id}?token=${apiToken}`, path: resolved };
+  };
+  const registerExportTarget = (filePath) => {
+    const resolved = path.resolve(String(filePath || ''));
+    fs.mkdirSync(path.dirname(resolved), { recursive: true });
+    const id = crypto.randomBytes(18).toString('hex');
+    exportTargets.set(id, resolved);
+    return { id, path: resolved };
+  };
+  const authorized = (req, url) => {
+    const supplied = req.headers['x-zoomcut-token'] || url.searchParams.get('token');
+    if (typeof supplied !== 'string' || supplied.length !== apiToken.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(apiToken));
+  };
+  const runRemux = (input, output, jobId) => new Promise((resolve, reject) => {
+    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-i', input,
+      '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+      '-pix_fmt', 'yuv420p', '-r', '30', '-vsync', 'cfr', '-c:a', 'aac', '-b:a', '192k',
+      '-movflags', '+faststart', output];
+    const proc = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+    exportJobs.set(jobId, proc);
+    let stderr = '';
+    proc.stderr.on('data', (chunk) => { stderr = (stderr + String(chunk)).slice(-64 * 1024); });
+    proc.on('error', reject);
+    proc.on('exit', (code, signal) => {
+      exportJobs.delete(jobId);
+      if (code === 0 && fs.existsSync(output)) resolve();
+      else reject(new Error(signal ? 'export canceled' : (stderr.trim() || `ffmpeg exited ${code}`)));
+    });
+  });
+  const serveFile = (req, res, filePath, headers) => {
+    const stat = fs.statSync(filePath);
+    const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    const range = req.headers.range;
+    if (!range) {
+      res.writeHead(200, { ...headers, 'Content-Type': type, 'Content-Length': stat.size, 'Accept-Ranges': 'bytes' });
+      fs.createReadStream(filePath).pipe(res);
+      return;
+    }
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!match) { res.writeHead(416, { ...headers, 'Content-Range': `bytes */${stat.size}` }); res.end(); return; }
+    const start = match[1] ? Number(match[1]) : Math.max(0, stat.size - Number(match[2] || 0));
+    const end = match[2] ? Math.min(stat.size - 1, Number(match[2])) : stat.size - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= stat.size) {
+      res.writeHead(416, { ...headers, 'Content-Range': `bytes */${stat.size}` }); res.end(); return;
+    }
+    res.writeHead(206, {
+      ...headers, 'Content-Type': type, 'Content-Length': end - start + 1,
+      'Content-Range': `bytes ${start}-${end}/${stat.size}`, 'Accept-Ranges': 'bytes',
+    });
+    fs.createReadStream(filePath, { start, end }).pipe(res);
+  };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
-    const send = (obj, code = 200) => { const b = JSON.stringify(obj); res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(b); };
+    const baseHeaders = {
+      'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
+      'Cross-Origin-Resource-Policy': 'same-origin',
+      'Content-Security-Policy': "default-src 'self' blob:; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+    };
+    const send = (obj, code = 200) => {
+      const body = JSON.stringify(obj);
+      res.writeHead(code, { ...baseHeaders, 'Content-Type': 'application/json; charset=utf-8', 'Content-Length': Buffer.byteLength(body) });
+      res.end(body);
+    };
 
     try {
+      if (url.pathname.startsWith('/api/') && !authorized(req, url)) return send({ error: 'unauthorized' }, 401);
       if (url.pathname === '/api/windows') {
         const [windows, displays, androidDevices] = await Promise.all([listRecordableWindows(), listDisplays(), listAndroidDevices()]);
         return send({ windows, displays, androidDevices });
@@ -593,55 +673,73 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
       if (url.pathname === '/api/record/state') return send(recordState());
       if (url.pathname === '/api/diagnostics') return send(await diagnostics());
       if (url.pathname === '/api/record/start' && req.method === 'POST') {
-        let body = ''; req.on('data', (c) => (body += c)); await new Promise((r) => req.on('end', r));
-        let opts = {}; try { opts = JSON.parse(body || '{}'); } catch {}
-        try { const r = await startRecording(recordingsDir, opts); return send({ ok: true, ...r }); }
-        catch (e) { return send({ error: e.message }, 409); }
+        const opts = normalizeRecordingOptions(await readJsonBody(req, 64 * 1024));
+        try { const result = await startRecording(recordingsDir, opts); return send({ ok: true, ...result }); }
+        catch (error) { return send({ error: error.message }, 409); }
       }
       if (url.pathname === '/api/record/stop' && req.method === 'POST') {
         stopRecording().catch(() => {}); return send({ ok: true });
       }
-      // แปลงไฟล์ export จาก MediaRecorder (VFR) → MP4 frame rate คงที่ (แก้อาการค้าง)
+      if (url.pathname === '/api/export/cancel' && req.method === 'POST') {
+        const body = await readJsonBody(req, 16 * 1024);
+        const proc = exportJobs.get(String(body.jobId || ''));
+        if (proc && proc.exitCode === null) proc.kill('SIGTERM');
+        return send({ ok: true });
+      }
       if (url.pathname === '/api/remux' && req.method === 'POST') {
-        const bufs = []; req.on('data', (c) => bufs.push(c)); await new Promise((r) => req.on('end', r));
-        const inBuf = Buffer.concat(bufs);
         const ext = (url.searchParams.get('ext') || 'webm').replace(/[^a-z0-9]/gi, '');
-        const tmpIn = path.join(os.tmpdir(), `zc-remux-${Date.now()}.${ext}`);
-        const tmpOut = path.join(os.tmpdir(), `zc-remux-${Date.now()}.mp4`);
+        const targetId = String(url.searchParams.get('target') || '');
+        const requestedTarget = exportTargets.get(targetId);
+        if (targetId && !requestedTarget) return send({ error: 'invalid export target' }, 400);
+        if (targetId) exportTargets.delete(targetId);
+        const jobId = String(url.searchParams.get('job') || crypto.randomBytes(12).toString('hex')).replace(/[^a-z0-9-]/gi, '');
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zoomcut-export-'));
+        const tmpIn = path.join(tempDir, `input.${ext}`);
+        const tmpOut = requestedTarget || path.join(tempDir, 'output.mp4');
         try {
-          fs.writeFileSync(tmpIn, inBuf);
-          const args = ['-y', '-hide_banner', '-loglevel', 'error', '-i', tmpIn,
-            '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-            '-pix_fmt', 'yuv420p', '-r', '30', '-vsync', 'cfr', '-c:a', 'aac', '-b:a', '128k',
-            '-movflags', '+faststart', tmpOut];
-          const code = await new Promise((r) => execFile(FFMPEG, args, { env: CHILD_ENV, maxBuffer: 1 << 26 }, (err) => r(err ? 1 : 0)));
-          if (code !== 0 || !fs.existsSync(tmpOut)) { res.writeHead(500); return res.end('remux failed'); }
-          const out = fs.readFileSync(tmpOut);
-          res.writeHead(200, { 'Content-Type': 'video/mp4', 'Content-Length': out.length });
-          res.end(out);
+          await streamRequestToFile(req, tmpIn, maxExportBytes);
+          await runRemux(tmpIn, tmpOut, jobId);
+          if (requestedTarget) return send({ ok: true, path: requestedTarget, jobId });
+          const stat = fs.statSync(tmpOut);
+          res.writeHead(200, { ...baseHeaders, 'Content-Type': 'video/mp4', 'Content-Length': stat.size });
+          const output = fs.createReadStream(tmpOut);
+          output.on('error', () => res.destroy());
+          output.on('close', () => fs.rm(tempDir, { recursive: true, force: true }, () => {}));
+          output.pipe(res);
+          return;
+        } catch (error) {
+          fs.rm(tempDir, { recursive: true, force: true }, () => {});
+          return send({ error: error.message }, error.statusCode || (error.message === 'export canceled' ? 499 : 500));
         } finally {
-          fs.unlink(tmpIn, () => {}); fs.unlink(tmpOut, () => {});
+          fs.unlink(tmpIn, () => {});
+          if (requestedTarget) fs.rm(tempDir, { recursive: true, force: true }, () => {});
         }
-        return;
       }
 
-      // static: index.html + recordings
       let filePath;
       if (url.pathname === '/' || url.pathname === '/index.html') filePath = path.join(webRoot, 'index.html');
-      else if (url.pathname.startsWith('/recordings/')) filePath = path.join(recordingsDir, decodeURIComponent(url.pathname.slice('/recordings/'.length)));
-      else filePath = path.join(webRoot, decodeURIComponent(url.pathname));
-      // กัน path traversal
-      if (!filePath.startsWith(webRoot) && !filePath.startsWith(recordingsDir)) { res.writeHead(403); return res.end(); }
-      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) { res.writeHead(404); return res.end('not found'); }
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
-      fs.createReadStream(filePath).pipe(res);
-    } catch (e) {
-      res.writeHead(500); res.end(String(e.message));
+      else if (url.pathname.startsWith('/media/')) {
+        if (!authorized(req, url)) { res.writeHead(401, baseHeaders); return res.end('unauthorized'); }
+        filePath = mediaPaths.get(url.pathname.slice('/media/'.length));
+        if (!filePath) { res.writeHead(404, baseHeaders); return res.end('not found'); }
+      } else if (url.pathname.startsWith('/recordings/')) {
+        if (!authorized(req, url)) { res.writeHead(401, baseHeaders); return res.end('unauthorized'); }
+        filePath = safeStaticPath(recordingsDir, url.pathname.slice('/recordings/'.length));
+      }
+      else filePath = safeStaticPath(webRoot, url.pathname);
+      if (!filePath) { res.writeHead(403, baseHeaders); return res.end('forbidden'); }
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) { res.writeHead(404, baseHeaders); return res.end('not found'); }
+      serveFile(req, res, filePath, baseHeaders);
+    } catch (error) {
+      if (!res.headersSent) send({ error: String(error.message) }, error.statusCode || 500);
+      else res.destroy(error);
     }
   });
 
   return new Promise((resolve) => {
-    server.listen(port, '127.0.0.1', () => resolve({ server, port: server.address().port, recordingsDir }));
+    server.listen(port, '127.0.0.1', () => resolve({
+      server, port: server.address().port, recordingsDir, apiToken, registerMediaPath, registerExportTarget,
+    }));
   });
 }
 
@@ -649,5 +747,5 @@ module.exports = { startServer, listRecordableWindows, startRecording, stopRecor
 
 // รันเดี่ยวเพื่อทดสอบ: node electron/server.js
 if (require.main === module) {
-  startServer({ port: 8123 }).then(({ port }) => console.log(`ZoomCut server (standalone) ที่ http://localhost:${port}`));
+  startServer({ port: 8123 }).then(({ port, apiToken }) => console.log(`ZoomCut server (standalone) ที่ http://localhost:${port}/?token=${apiToken}`));
 }
