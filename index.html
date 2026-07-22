@@ -39,7 +39,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    color-scheme: dark;
   }
+  body[data-theme="light"] { color-scheme: light; }
   header {
     display: flex;
     align-items: center;
@@ -207,13 +209,15 @@
   .drop-hint strong { color: var(--text); }
   .stage.dragover .drop-hint { border-color: var(--accent); color: var(--accent); }
   .timeline-area {
+    --lane-header-width: 176px;
     background: var(--panel);
     border-top: 1px solid var(--border);
-    padding: 12px 16px 16px;
+    padding: 12px 14px 10px;
     flex-shrink: 0;
     height: 190px;
     min-height: 118px;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   .transport { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .quick-start {
@@ -237,20 +241,138 @@
   .timeline-viewport {
     overflow-x: auto;
     overflow-y: hidden;
-    padding-bottom: 2px;
+    padding-bottom: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent;
   }
+  .timeline-viewport::-webkit-scrollbar { height: 10px; }
+  .timeline-viewport::-webkit-scrollbar-track { background: transparent; }
+  .timeline-viewport::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--muted) 48%, transparent);
+    border: 2px solid var(--panel);
+    border-radius: 5px;
+  }
+  .timeline-viewport::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 72%, transparent); }
   .timeline-content {
     min-width: 100%;
     transition: width .15s;
   }
-  .lane-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-left: 82px; flex-wrap: wrap; }
-  .lane-row { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 8px; }
-  .lane-label { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
+  .ruler, .timeline { margin-left: calc(var(--lane-header-width) + 8px); }
+  .lane-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 8px 0 2px calc(var(--lane-header-width) + 8px);
+    min-height: 30px;
+  }
+  .add-lane-btn {
+    height: 28px;
+    padding: 0 9px 0 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 6px;
+    color: var(--muted);
+    background: transparent;
+  }
+  .add-lane-btn:hover { color: var(--text); background: var(--panel2); }
+  .add-lane-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+    font-size: 15px;
+    line-height: 1;
+  }
+  .lane-row {
+    display: grid;
+    grid-template-columns: var(--lane-header-width) minmax(420px, 1fr);
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+  .lane-label {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 5px 0 7px;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--panel2) 72%, transparent);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: nowrap;
+  }
   .lane-row .seg-track, .lane-row .voice-track, .lane-row .camera-track { margin-top: 0; }
-  .lane-label { display:flex; align-items:center; gap:2px; }
-  .lane-label .lane-name { margin-right:auto; overflow:hidden; text-overflow:ellipsis; }
-  .lane-tool { border:0; background:transparent; color:var(--muted); padding:1px 2px; cursor:pointer; font-size:10px; }
-  .lane-tool.active { color:var(--accent); }
+  .lane-label .lane-name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .lane-kind {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 4px;
+    font-size: 9px;
+    font-weight: 750;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .lane-label[data-lane-base="voice"] .lane-kind { color: #43d782; background: rgba(67,215,130,.13); }
+  .lane-label[data-lane-base="camera"] .lane-kind { color: #4facef; background: rgba(79,172,239,.14); }
+  .lane-controls {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding-left: 5px;
+    border-left: 1px solid var(--border);
+  }
+  .lane-tool {
+    width: 21px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    padding: 0;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .lane-tool:hover { color: var(--text); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+  .lane-tool.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  .lane-tool.lock::before {
+    content: '';
+    width: 9px;
+    height: 7px;
+    margin-top: 3px;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+  }
+  .lane-tool.lock::after {
+    content: '';
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    margin-top: -7px;
+    border: 1.5px solid currentColor;
+    border-bottom: 0;
+    border-radius: 5px 5px 0 0;
+  }
+  .lane-tool.lock { position: relative; }
+  .lane-tool.visibility { font-size: 12px; }
   .track-group { display: grid; gap: 0; }
   .timeline {
     position: relative;
@@ -878,9 +1000,9 @@
             <div class="playhead" id="playhead" style="left:0"></div>
           </div>
           <div class="lane-actions">
-            <button class="btn small" id="addVideoLane">+ Video lane</button>
-            <button class="btn small" id="addVoiceLane">+ Voice lane</button>
-            <button class="btn small" id="addCameraLane">+ Camera lane</button>
+            <button class="btn small add-lane-btn" id="addVideoLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Video lane</span></button>
+            <button class="btn small add-lane-btn" id="addVoiceLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Voice lane</span></button>
+            <button class="btn small add-lane-btn" id="addCameraLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Camera lane</span></button>
           </div>
           <div class="track-group" id="videoTrackGroup"></div>
           <div class="track-group" id="voiceTrackGroup"></div>
@@ -1146,7 +1268,7 @@ const I18N = {
     camOn: '📷 กล้อง', camOff: '📷 ปิดกล้อง', cameraClip: n => `กล้อง ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 ลบกล้อง', fadeIn: 'Fade in', fadeOut: 'Fade out',
     videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
-    addVideoLane: '+ เลนวิดีโอ', addVoiceLane: '+ เลนเสียง', addCameraLane: '+ เลนกล้อง',
+    addVideoLane: 'เลนวิดีโอ', addVoiceLane: 'เลนเสียง', addCameraLane: 'เลนกล้อง',
     lane: 'เลน', closePanel: 'ปิดเมนูแก้ไข',
     quickRecordTitle: 'อัดทันที', quickRecordSub: 'เลือก Android/iPhone/จอหลักให้อัตโนมัติ',
     quickAddTitle: 'เพิ่มสื่อ', quickAddSub: 'วิดีโอแรกเป็น base, ไฟล์ถัดไปซ้อนเป็น clip',
@@ -1203,7 +1325,7 @@ const I18N = {
     camOn: '📷 Camera', camOff: '📷 Camera off', cameraClip: n => `Camera ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 Delete camera', fadeIn: 'Fade in', fadeOut: 'Fade out',
     videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
-    addVideoLane: '+ Video lane', addVoiceLane: '+ Voice lane', addCameraLane: '+ Camera lane',
+    addVideoLane: 'Video lane', addVoiceLane: 'Voice lane', addCameraLane: 'Camera lane',
     lane: 'Lane', closePanel: 'Close edit panel',
     quickRecordTitle: 'Record now', quickRecordSub: 'Auto-pick Android, iPhone, or the main display',
     quickAddTitle: 'Add media', quickAddSub: 'First video becomes base; more videos become clips',
@@ -1343,11 +1465,16 @@ function laneEnabled(kind, lane, purpose = 'display') {
 }
 function laneLabelHtml(kind, lane, labelKey) {
   const cfg = laneConfig(kind, lane);
-  return `<div class="lane-label" data-lane-base="${kind}"><span class="lane-name">${tr(labelKey)} ${lane + 1}</span>`
-    + `<button class="lane-tool${cfg.locked ? ' active' : ''}" data-lane-action="locked" title="Lock">${cfg.locked ? '🔒' : '🔓'}</button>`
-    + `<button class="lane-tool${cfg.muted ? ' active' : ''}" data-lane-action="muted" title="Mute">M</button>`
-    + `<button class="lane-tool${cfg.solo ? ' active' : ''}" data-lane-action="solo" title="Solo">S</button>`
-    + `<button class="lane-tool${cfg.hidden ? ' active' : ''}" data-lane-action="hidden" title="Hide">${cfg.hidden ? '◌' : '●'}</button></div>`;
+  const labels = state.lang === 'th'
+    ? { lock: 'ล็อกเลน', mute: 'ปิดเสียง', solo: 'เล่นเลนเดียว', hide: 'ซ่อนเลน' }
+    : { lock: 'Lock lane', mute: 'Mute lane', solo: 'Solo lane', hide: 'Hide lane' };
+  const kindLetter = kind === 'video' ? 'V' : kind === 'voice' ? 'A' : 'C';
+  const name = `${tr(labelKey)} ${lane + 1}`;
+  return `<div class="lane-label" data-lane-base="${kind}"><span class="lane-kind" aria-hidden="true">${kindLetter}</span><span class="lane-name" title="${name}">${name}</span><span class="lane-controls">`
+    + `<button class="lane-tool lock${cfg.locked ? ' active' : ''}" data-lane-action="locked" title="${labels.lock}" aria-label="${labels.lock}" aria-pressed="${cfg.locked}"></button>`
+    + `<button class="lane-tool${cfg.muted ? ' active' : ''}" data-lane-action="muted" title="${labels.mute}" aria-label="${labels.mute}" aria-pressed="${cfg.muted}">M</button>`
+    + `<button class="lane-tool${cfg.solo ? ' active' : ''}" data-lane-action="solo" title="${labels.solo}" aria-label="${labels.solo}" aria-pressed="${cfg.solo}">S</button>`
+    + `<button class="lane-tool visibility${cfg.hidden ? ' active' : ''}" data-lane-action="hidden" title="${labels.hide}" aria-label="${labels.hide}" aria-pressed="${cfg.hidden}">${cfg.hidden ? '○' : '●'}</button></span></div>`;
 }
 function bindLaneTools(groupId, kind, update) {
   $(groupId).addEventListener('click', e => {
@@ -1403,7 +1530,6 @@ function applyLanguage() {
     ['#mGrowL', 'growLeft'], ['#mGrowR', 'growRight'], ['#mDelete', 'delete'],
     ['#pickerOverlay h2', 'pickerTitle'], ['#pickerOverlay .sub', 'pickerSub'], ['#pickerCancel', 'cancel'],
     ['#diagOverlay h2', 'diagTitle'], ['#diagClose', 'close'], ['#exportOverlay h2', 'exportTitle'],
-    ['#addVideoLane', 'addVideoLane'], ['#addVoiceLane', 'addVoiceLane'], ['#addCameraLane', 'addCameraLane'],
     ['#quickRecordTitle', 'quickRecordTitle'], ['#quickRecordSub', 'quickRecordSub'],
     ['#quickAddTitle', 'quickAddTitle'], ['#quickAddSub', 'quickAddSub'],
     ['#quickVoiceTitle', 'quickVoiceTitle'], ['#quickVoiceSub', 'quickVoiceSub'],
@@ -1411,6 +1537,9 @@ function applyLanguage() {
   for (const [sel, key] of textMap) {
     const el = document.querySelector(sel);
     if (el) el.textContent = tr(key);
+  }
+  for (const [id, key] of [['addVideoLane', 'addVideoLane'], ['addVoiceLane', 'addVoiceLane'], ['addCameraLane', 'addCameraLane']]) {
+    $(id).querySelector('[data-lane-text]').textContent = tr(key);
   }
   const sliderLabels = [
     ['padding', 'padding'], ['radius', 'radius'], ['shadow', 'shadow'], ['cropT', 'cropTop'],
