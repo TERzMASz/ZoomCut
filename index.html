@@ -1115,7 +1115,7 @@ const I18N = {
     videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
     addVideoLane: '+ เลนวิดีโอ', addVoiceLane: '+ เลนเสียง', addCameraLane: '+ เลนกล้อง',
     lane: 'เลน', closePanel: 'ปิดเมนูแก้ไข',
-    quickRecordTitle: 'อัดหน้าจอ', quickRecordSub: 'เลือก iPhone, หน้าต่าง หรือทั้งจอ',
+    quickRecordTitle: 'อัดทันที', quickRecordSub: 'เลือก Android/iPhone/จอหลักให้อัตโนมัติ',
     quickAddTitle: 'เพิ่มสื่อ', quickAddSub: 'วิดีโอแรกเป็น base, ไฟล์ถัดไปซ้อนเป็น clip',
     quickVoiceTitle: 'พากย์เสียง', quickVoiceSub: 'เลือกไมค์ แล้วอัดจากตำแหน่ง playhead',
     addOverlayVideo: 'เพิ่มวิดีโอซ้อน',
@@ -1170,7 +1170,7 @@ const I18N = {
     videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
     addVideoLane: '+ Video lane', addVoiceLane: '+ Voice lane', addCameraLane: '+ Camera lane',
     lane: 'Lane', closePanel: 'Close edit panel',
-    quickRecordTitle: 'Record screen', quickRecordSub: 'Choose iPhone, a window, or a display',
+    quickRecordTitle: 'Record now', quickRecordSub: 'Auto-pick Android, iPhone, or the main display',
     quickAddTitle: 'Add media', quickAddSub: 'First video becomes base; more videos become clips',
     quickVoiceTitle: 'Voice over', quickVoiceSub: 'Pick a mic, then record from the playhead',
     addOverlayVideo: 'Add overlay video',
@@ -1658,7 +1658,7 @@ $('debugToggle').onclick = () => {
 // ---------- File loading ----------
 $('openBtn').onclick = () => $('fileInput').click();
 $('quickAddMedia').onclick = () => $('fileInput').click();
-$('quickRecord').onclick = () => recBtn.click();
+$('quickRecord').onclick = () => startSmartRecording();
 $('quickVoice').onclick = () => $('voiceBtn').click();
 $('fileInput').onchange = e => {
   const files = [...e.target.files];
@@ -3923,6 +3923,40 @@ recBtn.onclick = async () => {
   }
   openSourcePicker();
 };
+
+async function startSmartRecording() {
+  if (recState.recording) {
+    recBtn.click();
+    return;
+  }
+  $('quickRecord').classList.add('recording');
+  recBtn.textContent = tr('recStarting');
+  let ok = false, data = {};
+  try {
+    ({ ok, data } = await api('/api/windows', {}, 8000));
+  } catch {}
+  $('quickRecord').classList.remove('recording');
+  if (!ok) {
+    openSourcePicker();
+    return;
+  }
+  const android = (data.androidDevices || [])[0];
+  if (android) {
+    startRecording({ androidSerial: android.serial });
+    return;
+  }
+  const iphone = (data.windows || []).find(w => /iphone/i.test(`${w.app || ''} ${w.title || ''}`));
+  if (iphone) {
+    startRecording({ windowId: iphone.id });
+    return;
+  }
+  const mainDisplay = (data.displays || []).find(d => d.isMain) || (data.displays || [])[0];
+  if (mainDisplay) {
+    startRecording({ screenIndex: mainDisplay.index });
+    return;
+  }
+  openSourcePicker();
+}
 
 // ---------- หน้าเลือกแหล่งอัด (แบบแชร์จอ meeting) ----------
 const APP_ICONS = {
