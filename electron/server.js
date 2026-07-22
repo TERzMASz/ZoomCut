@@ -7,6 +7,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { createApiToken, safeStaticPath, readJsonBody, streamRequestToFile, normalizeRecordingOptions } = require('./security');
+const { createExportSessionManager } = require('./export-session');
 
 // แอป GUI (เปิดจาก Finder) มี PATH จำกัด ไม่รวม /opt/homebrew/bin → ต้องระบุ path ให้ชัด
 function platformKey() {
@@ -214,6 +215,12 @@ async function diagnostics() {
     ok: fs.existsSync(SCREENCAPTURE),
     detail: fs.existsSync(SCREENCAPTURE) ? 'พร้อมเรียก macOS screencapture' : 'ไม่พบ screencapture',
   };
+  const scrcpyServer = {
+    name: 'scrcpy-server',
+    path: SCRCPY_SERVER || '',
+    ok: Boolean(SCRCPY_SERVER && fs.existsSync(SCRCPY_SERVER) && fs.statSync(SCRCPY_SERVER).size > 0),
+    detail: SCRCPY_SERVER ? 'Bundled Android server payload' : 'scrcpy-server not found',
+  };
   return {
     ok: true,
     app: 'ZoomCut',
@@ -221,7 +228,7 @@ async function diagnostics() {
     arch: process.arch,
     node: process.version,
     debugLog: DEBUG_LOG,
-    bins: { ffmpeg, ffprobe, adb, scrcpy, screencapture, osascript },
+    bins: { ffmpeg, ffprobe, adb, scrcpy, scrcpyServer, screencapture, osascript },
     uiohook: {
       ok: hook !== false,
       running: rec.hookRunning,
@@ -591,7 +598,7 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
   const mediaPaths = new Map();
   const exportTargets = new Map();
   const exportJobs = new Map();
-  const maxExportBytes = Math.max(256 * 1024 * 1024, Number(process.env.ZOOMCUT_MAX_EXPORT_BYTES) || 8 * 1024 * 1024 * 1024);
+  const maxExportBytes = Math.max(256 * 1024 * 1024, Number(process.env.ZOOMCUT_MAX_EXPORT_BYTES) || 64 * 1024 * 1024 * 1024);
 
   const registerMediaPath = (filePath) => {
     const resolved = path.resolve(String(filePath || ''));
@@ -606,6 +613,11 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
     const id = crypto.randomBytes(18).toString('hex');
     exportTargets.set(id, resolved);
     return { id, path: resolved };
+  };
+  const consumeExportTarget = (id) => {
+    const target = exportTargets.get(id);
+    if (target) exportTargets.delete(id);
+    return target;
   };
   const authorized = (req, url) => {
     const supplied = req.headers['x-zoomcut-token'] || url.searchParams.get('token');
@@ -628,6 +640,11 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
       else reject(new Error(signal ? 'export canceled' : (stderr.trim() || `ffmpeg exited ${code}`)));
     });
   });
+  const cancelRemux = (jobId) => {
+    const proc = exportJobs.get(String(jobId || ''));
+    if (proc && proc.exitCode === null) proc.kill('SIGTERM');
+  };
+  const exportSessions = createExportSessionManager({ consumeTarget: consumeExportTarget, runRemux, cancelRemux, maxBytes: maxExportBytes });
   const serveFile = (req, res, filePath, headers) => {
     const stat = fs.statSync(filePath);
     const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
@@ -682,8 +699,7 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
       }
       if (url.pathname === '/api/export/cancel' && req.method === 'POST') {
         const body = await readJsonBody(req, 16 * 1024);
-        const proc = exportJobs.get(String(body.jobId || ''));
-        if (proc && proc.exitCode === null) proc.kill('SIGTERM');
+        cancelRemux(body.jobId);
         return send({ ok: true });
       }
       if (url.pathname === '/api/remux' && req.method === 'POST') {
@@ -691,7 +707,7 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
         const targetId = String(url.searchParams.get('target') || '');
         const requestedTarget = exportTargets.get(targetId);
         if (targetId && !requestedTarget) return send({ error: 'invalid export target' }, 400);
-        if (targetId) exportTargets.delete(targetId);
+        if (targetId) consumeExportTarget(targetId);
         const jobId = String(url.searchParams.get('job') || crypto.randomBytes(12).toString('hex')).replace(/[^a-z0-9-]/gi, '');
         const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zoomcut-export-'));
         const tmpIn = path.join(tempDir, `input.${ext}`);
@@ -738,7 +754,7 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
 
   return new Promise((resolve) => {
     server.listen(port, '127.0.0.1', () => resolve({
-      server, port: server.address().port, recordingsDir, apiToken, registerMediaPath, registerExportTarget,
+      server, port: server.address().port, recordingsDir, apiToken, registerMediaPath, registerExportTarget, exportSessions,
     }));
   });
 }

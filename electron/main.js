@@ -134,6 +134,10 @@ async function createWindow() {
       const filePath = result.filePath.endsWith('.mp4') ? result.filePath : result.filePath + '.mp4';
       return { canceled: false, ...serverInfo.registerExportTarget(filePath) };
     });
+    handle('export:begin', (options) => serverInfo.exportSessions.begin(options || {}));
+    handle('export:append', (sessionId, arrayBuffer) => serverInfo.exportSessions.append(sessionId, arrayBuffer));
+    handle('export:finish', (sessionId) => serverInfo.exportSessions.finish(sessionId));
+    handle('export:cancel', (sessionId) => serverInfo.exportSessions.cancel(sessionId));
     handle('system:permissions', () => ({
       screen: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('screen') : 'granted',
       microphone: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('microphone') : 'granted',
@@ -179,4 +183,7 @@ app.whenReady().then(async () => {
 
 // ปิดแอปจริงเมื่อปิดหน้าต่าง (รวม macOS ด้วย) — เพื่อให้เปิดใหม่แล้วอ่านสิทธิ์ล่าสุด
 // ไม่งั้นโปรเซสค้างด้วยสถานะสิทธิ์เดิม ทำให้ "ให้สิทธิ์แล้วแต่ยังอัดไม่ได้"
-app.on('window-all-closed', () => { showRecordingIndicator(false); app.quit(); });
+app.on('window-all-closed', () => {
+  showRecordingIndicator(false);
+  Promise.resolve(serverInfo?.exportSessions?.cancelAll()).finally(() => app.quit());
+});

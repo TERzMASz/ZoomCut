@@ -25,7 +25,7 @@ npm start            # เปิดแอป
 
 ## Build เป็น DMG (beta, self-signed)
 
-`bash electron/build-signed.sh` รัน QA, stage runtime tools, build, hardened-runtime signing และสร้าง DMG.
+`bash electron/build-signed.sh` รัน QA, ดาวน์โหลด official scrcpy runtime แบบ pin version พร้อมตรวจ SHA-256, stage runtime tools, build, hardened-runtime signing และสร้าง DMG. Release build จะหยุดทันทีถ้า `adb`, `scrcpy`, `scrcpy-server`, `ffmpeg` หรือ `ffprobe` ไม่ครบ.
 
 Public build ใช้ `ZOOMCUT_SIGN_IDENTITY="Developer ID Application: ..." ZOOMCUT_NOTARIZE=1` พร้อม `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`.
 

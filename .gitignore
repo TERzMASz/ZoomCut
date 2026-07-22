@@ -3,6 +3,7 @@
 .vercel
 .env*
 node_modules/
+.cache/
 dist/
 recordings/
 resources/bin/**/*

@@ -6,11 +6,10 @@ This application can bundle the following independently maintained tools:
   License terms depend on the exact build configuration. Release engineering must retain the
   corresponding license text, build configuration, and source-code offer required by that build.
 
-- Android Debug Bridge (adb), from Android SDK Platform Tools:
-  https://developer.android.com/tools/releases/platform-tools
-  Redistribution must be approved against the Android SDK license before a public release.
-
-- scrcpy and scrcpy-server: Apache License 2.0
+- scrcpy, scrcpy-server, and the adb binary included in scrcpy's official portable macOS release:
+  Version 4.0, SHA-256 verified against the upstream macOS release documentation.
+  scrcpy is licensed under Apache License 2.0.
   https://github.com/Genymobile/scrcpy
+  Android SDK components remain subject to the Android SDK license and must be reviewed before public distribution.
 
 The generated runtime-manifest.txt records the exact binaries and SHA-256 hashes in each build.

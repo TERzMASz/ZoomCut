@@ -10,7 +10,7 @@ DMG="dist/ZoomCut-${VERSION}-arm64.dmg"
 
 echo "▶ building…"
 npm run qa
-npm run stage:runtime-tools
+ZOOMCUT_REQUIRE_RUNTIME_TOOLS=1 npm run stage:runtime-tools
 npm run dist:mac >/dev/null 2>&1 || npm run dist:mac
 
 echo "▶ signing with stable identity: $IDENTITY"

@@ -34,7 +34,7 @@
 
 ## 3.1 Android USB Recording
 
-- ติดตั้ง Android Platform Tools ให้มี `adb` ในเครื่อง
+- ยืนยันว่า Diagnostics แสดง bundled `adb`, `scrcpy` และ `scrcpy-server`; ผู้ใช้ไม่ควรต้องติดตั้ง Android tools เพิ่ม
 - เปิด Developer Options และ USB debugging บน Android
 - ต่อ Android ผ่าน USB แล้วกด Trust/Allow debugging บนเครื่อง
 - เปิด `ตรวจระบบ` ต้องเห็น `adb` พร้อมใช้งาน และ Android device อย่างน้อย 1 เครื่อง
@@ -126,7 +126,8 @@
 - เช็กว่า zoom/tap ripple ตรงกับ preview
 - ทดสอบ 1080p, 2K และ 4K แล้วตรวจ resolution ด้วย ffprobe
 - ระหว่าง remux กด Cancel แล้วต้องไม่มี ffmpeg/process หรือ temporary file ค้าง
-- เปิด Activity Monitor ระหว่าง export ยาว: backend memory ต้องไม่โตตามขนาดไฟล์ export
+- เปิด Activity Monitor ระหว่าง export 4K ยาว: renderer และ backend memory ต้องไม่โตตามขนาดไฟล์ export
+- ระหว่าง render และ remux กด Cancel แล้วต้องไม่มี `.zoomcut-*.part.mp4`, temporary input หรือ ffmpeg process ค้าง
 
 ## 11. Project / Recovery
 
@@ -141,5 +142,6 @@
 - `npm run qa` และ `npm audit` ผ่าน release gate
 - เรียก `/api/record/state` โดยไม่มี token ต้องได้ 401
 - staged `ffmpeg`/`ffprobe` ต้องรันได้จาก `resources/bin/<platform>`
-- release build ต้องใช้ `ZOOMCUT_REQUIRE_RUNTIME_TOOLS=1` เพื่อกัน adb/scrcpy หาย
+- release build ต้องดาวน์โหลด official scrcpy archive ที่ pin ไว้, checksum ต้องตรง และต้อง fail ถ้า adb/scrcpy/scrcpy-server หาย
+- staged และ packaged `adb --version`, `scrcpy --version` ต้องรันได้โดยไม่พึ่ง Homebrew/PATH
 - ตรวจ `codesign --verify --deep --strict` และ notarization/staple สำหรับ public build

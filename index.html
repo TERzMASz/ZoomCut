@@ -4085,10 +4085,12 @@ function scheduleVoiceoversForSegment(audioCtx, dest, voiceBuffers, seg) {
 
 // ---------- Export ----------
 let exportAbortController = null;
+let activeDesktopExportSession = null;
 $('exportCancel').onclick = () => {
   if (!state.exporting) return;
   state.exportCancelRequested = true;
   if (exportAbortController) exportAbortController.abort();
+  if (activeDesktopExportSession && desktop) desktop.export.cancel(activeDesktopExportSession.id).catch(() => {});
   if (state.exportJobId) api('/api/export/cancel', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobId: state.exportJobId }),
   }, 3000).catch(() => {});
@@ -4133,8 +4135,23 @@ $('exportBtn').onclick = async () => {
     overlayAudio = connectOverlayAudio(audioCtx, audioDest);
     audioDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
     rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: Math.round(12_000_000 * scale * scale) });
-    const chunks = [];
-    rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    const chunks = desktop ? null : [];
+    let chunkWrite = Promise.resolve();
+    let chunkError = null;
+    if (desktop && exportTarget) {
+      activeDesktopExportSession = await desktop.export.begin({ targetId: exportTarget.id, ext, jobId: state.exportJobId });
+    }
+    rec.ondataavailable = e => {
+      if (!e.data.size) return;
+      if (!activeDesktopExportSession) { chunks.push(e.data); return; }
+      chunkWrite = chunkWrite.then(async () => {
+        const buffer = await e.data.arrayBuffer();
+        await desktop.export.append(activeDesktopExportSession.id, buffer);
+      }).catch(error => {
+        chunkError = error;
+        state.exportCancelRequested = true;
+      });
+    };
     const done = new Promise((resolve, reject) => { rec.onstop = resolve; rec.onerror = e => reject(e.error || new Error('MediaRecorder failed')); });
     const segs = state.segments;
     const totalOut = outputDuration();
@@ -4173,20 +4190,16 @@ $('exportBtn').onclick = async () => {
     }
     rec.stop();
     await done;
+    await chunkWrite;
+    if (chunkError) throw chunkError;
     if (state.exportCancelRequested) return;
-    const blob = new Blob(chunks, { type: mime });
     $('exportSub').textContent = tr('exportRemuxing');
     if (desktop && exportTarget) {
-      exportAbortController = new AbortController();
-      const query = new URLSearchParams({ ext, target: exportTarget.id, job: state.exportJobId });
-      const response = await fetch('/api/remux?' + query, {
-        method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-ZoomCut-Token': API_TOKEN },
-        body: blob, signal: exportAbortController.signal,
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || 'Export failed');
+      const result = await desktop.export.finish(activeDesktopExportSession.id);
+      activeDesktopExportSession = null;
       setProjectStatus(result.path);
     } else {
+      const blob = new Blob(chunks, { type: mime });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = `zoomcut-export.${ext}`;
@@ -4197,6 +4210,10 @@ $('exportBtn').onclick = async () => {
   } finally {
     video.pause();
     if (rec && rec.state !== 'inactive') try { rec.stop(); } catch {}
+    if (activeDesktopExportSession && desktop) {
+      await desktop.export.cancel(activeDesktopExportSession.id).catch(() => {});
+      activeDesktopExportSession = null;
+    }
     if (videoAudioSourceNode && baseExportGain) try { videoAudioSourceNode.disconnect(baseExportGain); baseExportGain.disconnect(); } catch {}
     for (const item of overlayAudio) {
       try { item.clip.audioSourceNode.disconnect(item.gain); item.gain.disconnect(); } catch {}
@@ -4326,6 +4343,7 @@ async function openDiagnostics() {
     diagItem(bins.ffprobe && bins.ffprobe.ok, 'ffprobe', bins.ffprobe && `${bins.ffprobe.path} — ${bins.ffprobe.detail}`),
     diagItem(bins.adb && bins.adb.ok, 'adb', bins.adb && `${bins.adb.path} — ${bins.adb.detail || (state.lang === 'th' ? 'พร้อมใช้ Android USB recording' : 'Ready for Android USB recording')}`),
     diagItem(bins.scrcpy && bins.scrcpy.ok, 'scrcpy', bins.scrcpy && `${bins.scrcpy.path} — ${bins.scrcpy.detail || (state.lang === 'th' ? 'พร้อมใช้ Android mirroring' : 'Ready for Android mirroring')}`),
+    diagItem(bins.scrcpyServer && bins.scrcpyServer.ok, 'scrcpy-server', bins.scrcpyServer && `${bins.scrcpyServer.path} — ${bins.scrcpyServer.detail}`),
     diagItem(bins.screencapture && bins.screencapture.ok, 'Screen Recording backend', bins.screencapture && `${bins.screencapture.path} — ${bins.screencapture.detail || (state.lang === 'th' ? 'พร้อมเรียก screencapture' : 'Ready to call screencapture')}`),
     diagItem(data.uiohook && data.uiohook.ok, 'Click hook', data.uiohook && data.uiohook.detail),
     diagItem((data.sources && data.sources.displays > 0), 'Display/window list', state.lang === 'th'

@@ -30,6 +30,7 @@ electron/
   server.js           ← HTTP server + ตรรกะอัดจอ (พอร์ตจาก record.py/serve.py มาเป็น Node)
   preload.js          ← bridge แบบจำกัดสำหรับ project/media/export/system permission
   project-store.js    ← save/open/autosave/recovery + content-addressed assets
+  export-session.js   ← bounded export chunks, temporary file, atomic publish และ cancel cleanup
   security.js         ← path containment, request limits, stream upload, option validation
   build-signed.sh     ← build + เซ็นด้วย self-signed cert (identity คงที่) + ทำ DMG
   README.md           ← วิธี build/แจก
@@ -100,9 +101,9 @@ sourceRect(cam)       → แปลงกล้อง → พิกัดพิ�
 - `outputDuration()` = ผลรวม `(end-start)/speed`
 
 ### 4.5 Export
-`MediaRecorder(canvas.captureStream(60))` → stream request ลง temporary file → **POST `/api/remux`** ให้ ffmpeg
+`MediaRecorder(canvas.captureStream(60))` → preload ส่ง chunk ทีละก้อนเข้า `export-session.js` → temporary file → ffmpeg
 แปลงเป็น MP4 frame rate คงที่ (แก้อาการ "เล่นได้แค่ช่วงแรกแล้วค้าง")
-บนเว็บ (ไม่มี `/api/remux`) จะ fallback ดาวน์โหลด blob เดิม
+renderer ของ desktop ไม่ถือ export ทั้งไฟล์ใน RAM; เมื่อสำเร็จจะ rename `.part.mp4` ไปยังปลายทาง. บนเว็บจะ fallback ดาวน์โหลด blob เดิม
 
 ### 4.7 Project persistence
 ไฟล์ `.zoomcut` เก็บ schema version, settings, lanes, trims, zooms และ media paths. Autosave เขียนแบบ atomic ไปที่ `userData/recovery`; voice/camera ที่อัดในแอปเก็บแบบ content-addressed ใน `userData/project-assets`. เปิดโปรเจกต์แล้วหา media ไม่เจอจะขอ relink.
@@ -135,6 +136,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 - **แจกแจงหน้าต่าง/จอ**: JXA (`osascript -l JavaScript -e <script>`) เรียก CGWindowList / NSScreen — **ฝัง script เป็นสตริง inline** (ดูกับดัก #1)
 - **Time-sync**: `screencapture` เขียนไฟล์ตอน "หยุด" ไม่ใช่ระหว่างอัด (ดูกับดัก #2) → คลิกเก็บเป็น wall-clock time แล้วตอนจบคำนวณ `frame0 = stopWall - duration` เพื่อ map เวลาคลิกให้ตรงเฟรมจริง
 - **แปลง**: `.mov` → `.mp4` (copy ถ้า h264, ไม่งั้น transcode) แล้วเขียน `.clicks.json`
+- **Android runtime**: release build ดาวน์โหลด official portable scrcpy 4.0 ตามสถาปัตยกรรม ตรวจ SHA-256 แล้ว bundle `adb`, `scrcpy`, `scrcpy-server`; ผู้ใช้ไม่ต้องติดตั้งเอง
 
 ---
 
@@ -170,7 +172,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 | เพิ่ม/แก้ตัวเลือกในหน้าเลือกแหล่งอัด | `index.html` `openSourcePicker()` + `server.js` `startRecording()` |
 | แก้ตรรกะซูม/กล้อง | `index.html` `cameraAt()` / `sourceRect()` (แก้ที่ sourceRect ที่เดียว) |
 | เพิ่มเฟรมอุปกรณ์ใหม่ (iPad/Mac) | `index.html` `layout()` (ค่า bezel/topBar) + `drawFrame()` |
-| แก้คุณภาพ/รูปแบบไฟล์ export | `server.js` `/api/remux` (ffmpeg args) |
+| แก้คุณภาพ/รูปแบบไฟล์ export | `export-session.js` + `server.js` `runRemux()` (ffmpeg args) |
 | เพิ่ม field ใน preset | `index.html` `PRESET_FIELDS` + `applySettings()` |
 | เพิ่ม backend อัดของ Windows | `server.js` `startRecording()` (ต้องใช้ ffmpeg gdigrab/dshow แทน screencapture) |
 
@@ -181,7 +183,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 - [ ] Notarize (ต้องมี Apple Developer $99/ปี) → เปิดได้เนียนไม่มีเตือน
 - [ ] ไอคอนแอป (ตอนนี้ใช้ default Electron)
 - [ ] deterministic/offline frame renderer (ปัจจุบัน canvas export ยัง realtime)
-- [ ] Android real-device matrix + bundled adb/scrcpy ที่ผ่าน license review
+- [ ] Android real-device matrix + public-distribution license review (runtime bundle ทำแล้ว)
 - [ ] Debug log อยู่ที่ `/tmp/zoomcut-debug.log` (จาก `dbg()` ใน server.js)
 
 ---

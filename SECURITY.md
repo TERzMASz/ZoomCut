@@ -15,7 +15,7 @@
 ## Release gates
 
 1. Run `npm run qa` and `npm audit`.
-2. Run `ZOOMCUT_REQUIRE_RUNTIME_TOOLS=1 npm run stage:runtime-tools` on the release machine.
+2. Run `npm run stage:runtime-tools`. Android tools are downloaded from the pinned official scrcpy 4.0 portable release and verified against the upstream SHA-256 before staging. Signed release builds enforce that every required tool is present.
 3. Verify `runtime-manifest.txt`, execute the staged tools, and scan the final app with `codesign --verify --deep --strict`.
 4. For public distribution, sign with Apple Developer ID and notarize using `ZOOMCUT_NOTARIZE=1` plus the Apple credentials documented in `electron/build-signed.sh`.
 5. Validate on a clean Apple Silicon Mac. Build and validate a separate x64 artifact for Intel support.
@@ -23,7 +23,7 @@
 
 ## Known residual risks
 
-- Canvas export still renders in real time and retains MediaRecorder chunks in renderer memory before streaming to the backend.
+- Canvas export still renders in real time, but desktop exports write each MediaRecorder chunk through a bounded IPC session instead of retaining the complete export in renderer memory.
 - Recorded voice/camera chunks are initially held by MediaRecorder before being persisted as content-addressed assets.
 - Android touch capture needs real-device QA across vendors, rotation, disconnect, and permission changes.
 - Self-signed beta builds are not notarized and will be rejected by Gatekeeper assessment.
