@@ -5,17 +5,41 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const DEFAULT_MAX_BYTES = 64 * 1024 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 256 * 1024 * 1024 * 1024;
 const MAX_CHUNK_BYTES = 32 * 1024 * 1024;
 
 function normalizeExt(value) {
   const ext = String(value || 'webm').toLowerCase();
-  if (!['webm', 'mp4'].includes(ext)) throw new Error('Unsupported export container');
+  if (!['webm', 'mp4', 'mjpeg'].includes(ext)) throw new Error('Unsupported export container');
   return ext;
 }
 
-function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxBytes = DEFAULT_MAX_BYTES, tempRoot = os.tmpdir() }) {
+function freeBytes(target) {
+  const stat = fs.statfsSync(target);
+  return Number(stat.bavail) * Number(stat.bsize);
+}
+
+function cleanupStaleExports(recoveryDir, tempRoot = os.tmpdir()) {
+  if (!recoveryDir || !fs.existsSync(recoveryDir)) return 0;
+  let cleaned = 0;
+  for (const name of fs.readdirSync(recoveryDir).filter(x => /^export-[a-f0-9]+\.json$/.test(x))) {
+    const journalPath = path.join(recoveryDir, name);
+    try {
+      const item = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+      if (item.inputPath && path.resolve(item.inputPath).startsWith(path.resolve(tempRoot) + path.sep)) fs.rmSync(item.inputPath, { force: true });
+      if (item.tempDir && path.resolve(item.tempDir).startsWith(path.resolve(tempRoot) + path.sep)) fs.rmSync(item.tempDir, { recursive: true, force: true });
+      if (item.outputPart && /\.zoomcut-[a-f0-9]+\.part\.mp4$/.test(item.outputPart)) fs.rmSync(item.outputPart, { force: true });
+      cleaned++;
+    } catch {}
+    fs.rmSync(journalPath, { force: true });
+  }
+  return cleaned;
+}
+
+function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxBytes = DEFAULT_MAX_BYTES, tempRoot = os.tmpdir(), recoveryDir }) {
   const sessions = new Map();
+  if (recoveryDir) fs.mkdirSync(recoveryDir, { recursive: true });
+  cleanupStaleExports(recoveryDir, tempRoot);
 
   function getSession(id) {
     const session = sessions.get(String(id || ''));
@@ -27,22 +51,32 @@ function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxB
     try { fs.unlinkSync(session.inputPath); } catch {}
     try { fs.unlinkSync(session.outputPart); } catch {}
     try { fs.rmdirSync(session.tempDir); } catch {}
+    if (session.journalPath) try { fs.unlinkSync(session.journalPath); } catch {}
   }
 
-  function begin({ targetId, ext, jobId }) {
+  function begin({ targetId, ext, jobId, estimatedBytes = 0, fps = 30, audioPlan = null }) {
     const targetPath = consumeTarget(String(targetId || ''));
     if (!targetPath) throw new Error('Invalid export target');
     const id = crypto.randomBytes(18).toString('hex');
     const safeExt = normalizeExt(ext);
     const safeJobId = String(jobId || id).replace(/[^a-z0-9-]/gi, '') || id;
+    const estimate = Math.max(0, Number(estimatedBytes) || 0);
+    const reserve = 1024 * 1024 * 1024;
+    const required = estimate * 1.3 + reserve;
+    if (estimate && (freeBytes(tempRoot) < required || freeBytes(path.dirname(targetPath)) < required)) {
+      throw new Error('Not enough disk space for export');
+    }
     const tempDir = fs.mkdtempSync(path.join(tempRoot, 'zoomcut-export-stream-'));
     const inputPath = path.join(tempDir, `input.${safeExt}`);
     const outputPart = `${targetPath}.zoomcut-${id}.part.mp4`;
     const stream = fs.createWriteStream(inputPath, { flags: 'wx', mode: 0o600 });
+    const journalPath = recoveryDir ? path.join(recoveryDir, `export-${id}.json`) : null;
     const session = {
       id, targetPath, inputPath, outputPart, tempDir, stream, jobId: safeJobId,
-      bytes: 0, state: 'writing', canceled: false, streamError: null,
+      bytes: 0, state: 'writing', canceled: false, streamError: null, journalPath,
+      ext: safeExt, fps: Math.max(1, Math.min(60, Number(fps) || 30)), audioPlan,
     };
+    if (journalPath) fs.writeFileSync(journalPath, JSON.stringify({ inputPath, outputPart, tempDir, createdAt: Date.now() }), { mode: 0o600 });
     stream.on('error', error => { session.streamError = error; });
     sessions.set(id, session);
     return { id };
@@ -71,7 +105,7 @@ function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxB
       if (session.streamError) throw session.streamError;
       if (!session.bytes) throw new Error('Export produced no media data');
       session.state = 'remuxing';
-      await runRemux(session.inputPath, session.outputPart, session.jobId);
+      await runRemux(session.inputPath, session.outputPart, session.jobId, session);
       if (session.canceled) throw new Error('export canceled');
       fs.renameSync(session.outputPart, session.targetPath);
       session.state = 'finished';
@@ -101,4 +135,4 @@ function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxB
   return { begin, append, finish, cancel, cancelAll, activeCount: () => sessions.size };
 }
 
-module.exports = { DEFAULT_MAX_BYTES, MAX_CHUNK_BYTES, normalizeExt, createExportSessionManager };
+module.exports = { DEFAULT_MAX_BYTES, MAX_CHUNK_BYTES, normalizeExt, freeBytes, cleanupStaleExports, createExportSessionManager };

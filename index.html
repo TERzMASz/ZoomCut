@@ -1737,9 +1737,22 @@ $('openBtn').onclick = () => $('fileInput').click();
 $('quickAddMedia').onclick = () => $('fileInput').click();
 $('quickRecord').onclick = () => startSmartRecording();
 $('quickVoice').onclick = () => $('voiceBtn').click();
-$('fileInput').onchange = e => {
+async function authorizeUserFiles(files) {
+  if (!desktop) return true;
+  try {
+    await Promise.all(files.map(file => desktop.project.authorizeFile(file)));
+    return true;
+  } catch (error) {
+    showActionableError(error?.message || (state.lang === 'th'
+      ? 'ไม่สามารถเปิดไฟล์ที่เลือกได้'
+      : 'Unable to open the selected file'));
+    return false;
+  }
+}
+$('fileInput').onchange = async e => {
   const files = [...e.target.files];
   if (!files.length) return;
+  if (!await authorizeUserFiles(files)) return;
   handleMediaFiles(files);
   e.target.value = '';
 };
@@ -1771,10 +1784,11 @@ function handleMediaFiles(files) {
 const stage = $('stage');
 stage.addEventListener('dragover', e => { e.preventDefault(); stage.classList.add('dragover'); });
 stage.addEventListener('dragleave', () => stage.classList.remove('dragover'));
-stage.addEventListener('drop', e => {
+stage.addEventListener('drop', async e => {
   e.preventDefault();
   stage.classList.remove('dragover');
   const files = [...e.dataTransfer.files];
+  if (!await authorizeUserFiles(files)) return;
   const vid = files.find(f => f.type.startsWith('video/'));
   const img = files.find(f => f.type.startsWith('image/'));
   const json = files.find(f => f.name.endsWith('.json'));
@@ -4083,6 +4097,79 @@ function scheduleVoiceoversForSegment(audioCtx, dest, voiceBuffers, seg) {
   }
 }
 
+function offlineAudioPlan() {
+  const clips = [];
+  for (const clip of state.videoClips) if (clip.sourcePath && laneEnabled('video', clip.lane || 0, 'audio')) {
+    clips.push({ path: clip.sourcePath, offset: clipMediaOffset(clip), duration: clipOutDuration(clip), outStart: clipOutStart(clip), volume: clip.muted ? 0 : (clip.volume ?? 1) });
+  }
+  for (const clip of state.voiceovers) if (clip.sourcePath && laneEnabled('voice', clip.lane || 0, 'audio')) {
+    clips.push({ path: clip.sourcePath, offset: clipMediaOffset(clip), duration: clipOutDuration(clip), outStart: clipOutStart(clip), volume: clip.muted ? 0 : (clip.volume ?? 1) });
+  }
+  return {
+    duration: outputDuration(),
+    base: state.baseMedia?.sourcePath ? {
+      path: state.baseMedia.sourcePath,
+      segments: state.segments.map(segment => ({
+        start: segment.start, end: segment.end, speed: segment.speed,
+        volume: laneEnabled('video', segment.lane || 0, 'audio') ? 1 : 0,
+      })),
+    } : null,
+    clips,
+  };
+}
+
+function seekElement(element, time) {
+  if (!element || !Number.isFinite(time)) return Promise.resolve();
+  const target = Math.max(0, Math.min(Math.max(0, (element.duration || time) - 0.001), time));
+  if (element.readyState >= 2 && Math.abs((element.currentTime || 0) - target) < 0.002) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Timed out seeking media for offline export')); }, 10000);
+    const cleanup = () => { clearTimeout(timer); element.removeEventListener('seeked', done); element.removeEventListener('error', failed); };
+    const done = () => { cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error('Could not decode media during offline export')); };
+    element.addEventListener('seeked', done, { once: true });
+    element.addEventListener('error', failed, { once: true });
+    element.currentTime = target;
+  });
+}
+
+async function seekOfflineFrame(outTime) {
+  const safeOut = Math.min(Math.max(0, outputDuration() - 0.0001), outTime + 0.000001);
+  await seekElement(video, outputToSourceTime(safeOut));
+  const active = [...state.videoClips, ...state.facecams]
+    .filter(clip => safeOut >= clipOutStart(clip) && safeOut < clipOutStart(clip) + clipOutDuration(clip));
+  await Promise.all(active.map(clip => seekElement(clip.video, safeOut - clipOutStart(clip) + clipMediaOffset(clip))));
+}
+
+async function exportOfflineDeterministic(exportTarget, scale) {
+  await persistRecordedAssets();
+  const fps = 30;
+  const duration = outputDuration();
+  const frames = Math.max(1, Math.ceil(duration * fps));
+  const estimatedBytes = Math.ceil(frames * canvas.width * canvas.height * 0.1);
+  activeDesktopExportSession = await desktop.export.begin({
+    targetId: exportTarget.id, ext: 'mjpeg', jobId: state.exportJobId, fps,
+    estimatedBytes, audioPlan: offlineAudioPlan(),
+  });
+  for (let frame = 0; frame < frames && !state.exportCancelRequested; frame++) {
+    const outTime = Math.min(duration, frame / fps);
+    await seekOfflineFrame(outTime);
+    drawFrame(true);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    if (!blob) throw new Error('Could not encode offline export frame');
+    await desktop.export.append(activeDesktopExportSession.id, await blob.arrayBuffer());
+    if (frame % 3 === 0) {
+      $('exportProgress').style.width = ((frame + 1) / frames * 100) + '%';
+      $('exportSub').textContent = `${state.lang === 'th' ? 'กำลังวาดเฟรม' : 'Rendering frames'} ${frame + 1}/${frames}`;
+    }
+  }
+  if (state.exportCancelRequested) return;
+  $('exportSub').textContent = tr('exportRemuxing');
+  const result = await desktop.export.finish(activeDesktopExportSession.id);
+  activeDesktopExportSession = null;
+  setProjectStatus(result.path);
+}
+
 // ---------- Export ----------
 let exportAbortController = null;
 let activeDesktopExportSession = null;
@@ -4121,6 +4208,10 @@ $('exportBtn').onclick = async () => {
   let overlayAudio = [];
   let rec = null;
   try {
+    if (desktop && exportTarget) {
+      await exportOfflineDeterministic(exportTarget, scale);
+      return;
+    }
     const candidates = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
     const mime = candidates.find(m => MediaRecorder.isTypeSupported(m)) || 'video/webm';
     const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
@@ -4139,7 +4230,8 @@ $('exportBtn').onclick = async () => {
     let chunkWrite = Promise.resolve();
     let chunkError = null;
     if (desktop && exportTarget) {
-      activeDesktopExportSession = await desktop.export.begin({ targetId: exportTarget.id, ext, jobId: state.exportJobId });
+      const estimatedBytes = Math.ceil(outputDuration() * 12_000_000 * scale * scale / 8 * 2.2);
+      activeDesktopExportSession = await desktop.export.begin({ targetId: exportTarget.id, ext, jobId: state.exportJobId, estimatedBytes });
     }
     rec.ondataavailable = e => {
       if (!e.data.size) return;

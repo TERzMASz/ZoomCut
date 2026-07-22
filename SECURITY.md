@@ -23,9 +23,9 @@
 
 ## Known residual risks
 
-- Canvas export still renders in real time, but desktop exports write each MediaRecorder chunk through a bounded IPC session instead of retaining the complete export in renderer memory.
+- Desktop video export is deterministic and frame-driven. MJPEG frame chunks use bounded IPC writes, disk-space preflight, crash journals, and atomic output publication; browser-only export retains the MediaRecorder fallback.
 - Recorded voice/camera chunks are initially held by MediaRecorder before being persisted as content-addressed assets.
-- Android touch capture needs real-device QA across vendors, rotation, disconnect, and permission changes.
+- Android recording uses one bundled scrcpy process for preview and local recording, polls orientation, and preserves a playable partial recording on disconnect. Raw touch permission and coordinate behavior still need real-device QA across vendors.
 - Self-signed beta builds are not notarized and will be rejected by Gatekeeper assessment.
 - Mac App Store sandbox compatibility has not been established; global input monitoring, child executables, and external recording tools require a separate distribution decision.
 

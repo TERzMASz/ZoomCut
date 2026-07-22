@@ -40,6 +40,8 @@
 - เปิด `ตรวจระบบ` ต้องเห็น `adb` พร้อมใช้งาน และ Android device อย่างน้อย 1 เครื่อง
 - กด `อัดหน้าจอ` แล้วเลือก `Android ผ่าน USB`
 - อัด 5-10 วินาทีและแตะหน้าจอ Android อย่างน้อย 3 จุด
+- หมุน portrait/landscape ระหว่างอัด แล้วตรวจว่าจุดแตะหลังหมุนยังตรง
+- ถอดสายระหว่างอัด: แอปต้อง finalize คลิปบางส่วนที่เล่นได้และไม่ค้าง processing
 - กดหยุดอัดใน ZoomCut
 - หลังโหลดวิดีโอ ต้องเห็นจำนวน zoom/click จาก `.clicks.json`
 - เปิด `Debug` แล้วเล่นผ่านจุดแตะ เส้น crosshair ต้องตรงกับจุดที่แตะบน Android
@@ -125,9 +127,10 @@
 - เช็กว่าช่วงที่ตัดออกไม่โผล่กลับมา
 - เช็กว่า zoom/tap ripple ตรงกับ preview
 - ทดสอบ 1080p, 2K และ 4K แล้วตรวจ resolution ด้วย ffprobe
-- ระหว่าง remux กด Cancel แล้วต้องไม่มี ffmpeg/process หรือ temporary file ค้าง
 - เปิด Activity Monitor ระหว่าง export 4K ยาว: renderer และ backend memory ต้องไม่โตตามขนาดไฟล์ export
 - ระหว่าง render และ remux กด Cancel แล้วต้องไม่มี `.zoomcut-*.part.mp4`, temporary input หรือ ffmpeg process ค้าง
+- force quit ระหว่าง export แล้วเปิดใหม่: journal และ temporary export เก่าต้องถูกล้าง
+- ตรวจว่า export แบบ speed/trim หลาย segment มีจำนวนเฟรมและ duration ตรงกับ output timeline และ audio ไม่ drift
 
 ## 11. Project / Recovery
 

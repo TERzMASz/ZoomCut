@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('zoomcutDesktop', {
     persistAsset: (arrayBuffer, extension) => ipcRenderer.invoke('media:persist', arrayBuffer, extension),
     registerRecording: (base) => ipcRenderer.invoke('media:register-recording', base),
     chooseReplacement: (name) => ipcRenderer.invoke('media:choose-replacement', name),
+    authorizeFile: (file) => ipcRenderer.invoke('media:authorize-user-file', webUtils.getPathForFile(file)),
   },
   export: {
     choosePath: (suggestedName) => ipcRenderer.invoke('export:choose-path', suggestedName),

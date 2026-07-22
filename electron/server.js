@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { spawn, execFile } = require('child_process');
 const { createApiToken, safeStaticPath, readJsonBody, streamRequestToFile, normalizeRecordingOptions } = require('./security');
 const { createExportSessionManager } = require('./export-session');
+const { parseOrientation, createTouchParser } = require('./android-tracking');
 
 // แอป GUI (เปิดจาก Finder) มี PATH จำกัด ไม่รวม /opt/homebrew/bin → ต้องระบุ path ให้ชัด
 function platformKey() {
@@ -184,6 +185,10 @@ async function androidScreenSize(serial) {
   const m = r.stdout.match(/Physical size:\s*(\d+)x(\d+)/) || r.stdout.match(/Override size:\s*(\d+)x(\d+)/);
   return m ? { w: parseInt(m[1], 10), h: parseInt(m[2], 10) } : { w: 1080, h: 1920 };
 }
+async function androidOrientation(serial) {
+  const result = await execAdb(serial, ['shell', 'dumpsys', 'input'], 5000);
+  return result.ok ? parseOrientation(result.stdout) : 0;
+}
 async function androidTouchDevice(serial) {
   const r = await execAdb(serial, ['shell', 'getevent', '-lp'], 7000);
   if (!r.ok) return null;
@@ -261,12 +266,15 @@ function loadUiohook() {
 const rec = {
   active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
   proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
+  androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
   finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '',
 };
 
 function resetRec() {
   Object.assign(rec, { active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-    proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, finished: false, error: null, capStderr: '', ffmpegError: '' });
+    proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null,
+    androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
+    finished: false, error: null, capStderr: '', ffmpegError: '' });
 }
 
 async function startRecording(recordingsDir, opts) {
@@ -365,39 +373,42 @@ async function startAndroidRecording(base, serial) {
   if (!devices.some((d) => d.serial === serial)) throw new Error('ไม่พบ Android device — เปิด USB debugging แล้วเชื่อมต่ออีกครั้ง');
   const touch = await androidTouchDevice(serial);
   const size = await androidScreenSize(serial);
-  const remote = `/sdcard/ZoomCut-${path.basename(base)}.mp4`;
+  rec.androidOrientation = await androidOrientation(serial);
+  const outMp4 = base + '.mp4';
   rec.mode = 'android';
   rec.base = base;
   rec.androidSerial = serial;
-  rec.remotePath = remote;
+  rec.remotePath = null;
   rec.bounds = { x: 0, y: 0, w: touch?.xMax || size.w, h: touch?.yMax || size.h };
-  const cap = spawn(ADB, adbArgs(serial, ['shell', 'screenrecord', remote]), { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+  const args = ['--serial', serial, '--window-title', `ZoomCut Android ${serial}`, '--stay-awake', '--no-audio', `--record=${outMp4}`];
+  const cap = spawn(SCRCPY, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
   rec.proc = cap;
+  rec.mirrorProc = cap;
   rec.active = true;
   rec.startedAt = Date.now();
-  cap.stderr.on('data', (buf) => { rec.capStderr += String(buf); });
+  cap.stderr.on('data', (buf) => { rec.capStderr += String(buf); dbg(`scrcpy record: ${String(buf).trim()}`); });
   cap.on('exit', () => {
     if (rec.active) {
-      rec.error = 'Android screenrecord หยุดก่อนเวลา — ตรวจสาย USB/สิทธิ์ USB debugging';
+      rec.androidConnected = false;
       rec.active = false;
+      rec.processing = true;
+      clearInterval(rec.androidTimer);
+      if (rec.touchProc && rec.touchProc.exitCode === null) try { rec.touchProc.kill('SIGTERM'); } catch {}
+      finalizeAndroidRecording(Date.now()).catch(error => { rec.error = error.message; rec.processing = false; });
+      dbg('Android scrcpy recorder exited; finalized available partial recording');
     }
   });
   startAndroidTouchTracking(serial, touch);
-  startAndroidMirror(serial);
-  dbg(`android screenrecord serial=${serial} remote=${remote} touch=${touch ? touch.device : 'auto'}`);
+  rec.androidTimer = setInterval(async () => {
+    if (!rec.active) return;
+    const connected = (await listAndroidDevices()).some(device => device.serial === serial);
+    rec.androidConnected = connected;
+    if (!connected) return;
+    rec.androidOrientation = await androidOrientation(serial);
+    if ((!rec.touchProc || rec.touchProc.exitCode !== null) && !rec.trackingError) startAndroidTouchTracking(serial, touch);
+  }, 1500);
+  dbg(`android scrcpy record serial=${serial} output=${outMp4} touch=${touch ? touch.device : 'auto'}`);
   return { base: path.basename(base) };
-}
-
-function startAndroidMirror(serial) {
-  if (!fs.existsSync(SCRCPY) && SCRCPY === 'scrcpy') {
-    dbg('scrcpy unavailable: Android mirror preview disabled');
-    return;
-  }
-  const args = ['--serial', serial, '--window-title', `ZoomCut Android ${serial}`, '--stay-awake', '--no-audio'];
-  const proc = spawn(SCRCPY, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
-  rec.mirrorProc = proc;
-  proc.stderr.on('data', (buf) => dbg(`scrcpy stderr: ${String(buf).trim()}`));
-  proc.on('error', (e) => dbg(`scrcpy start failed: ${e.message}`));
 }
 
 function startAndroidTouchTracking(serial, touch) {
@@ -405,37 +416,21 @@ function startAndroidTouchTracking(serial, touch) {
   const proc = spawn(ADB, adbArgs(serial, args), { stdio: ['ignore', 'pipe', 'pipe'], env: CHILD_ENV });
   rec.touchProc = proc;
   let buf = '';
-  let curX = null, curY = null, touching = false, began = false;
   const xMax = touch?.xMax || rec.bounds.w || 1;
   const yMax = touch?.yMax || rec.bounds.h || 1;
-  const parse = (line) => {
-    const m = line.match(/:\s+([0-9a-fA-F]{4})\s+([0-9a-fA-F]{4})\s+([0-9a-fA-F]+)/);
-    if (!m) return;
-    const type = parseInt(m[1], 16), code = parseInt(m[2], 16);
-    let val = parseInt(m[3], 16);
-    if (val > 0x7fffffff) val -= 0x100000000;
-    if (type === 0x0003 && code === 0x0035) curX = val;
-    if (type === 0x0003 && code === 0x0036) curY = val;
-    if (type === 0x0001 && code === 0x014a) {
-      if (val === 1 && !touching) began = true;
-      touching = val === 1;
-    }
-    if (type === 0x0003 && code === 0x0039) {
-      if (val >= 0 && !touching) began = true;
-      touching = val >= 0;
-    }
-    if (type === 0x0000 && code === 0x0000 && began && touching && curX !== null && curY !== null) {
-      rec.clicks.push({ wall: Date.now(), x: Math.max(0, Math.min(1, curX / xMax)), y: Math.max(0, Math.min(1, curY / yMax)) });
-      began = false;
-    }
-  };
+  const parse = createTouchParser({ xMax, yMax, orientation: () => rec.androidOrientation,
+    onTouch: point => rec.clicks.push({ wall: Date.now(), ...point }) });
   proc.stdout.on('data', (chunk) => {
     buf += String(chunk);
     const lines = buf.split('\n');
     buf = lines.pop() || '';
     lines.forEach(parse);
   });
-  proc.stderr.on('data', (chunk) => dbg(`android getevent stderr: ${String(chunk).trim()}`));
+  proc.stderr.on('data', (chunk) => {
+    const detail = String(chunk).trim();
+    if (/permission denied|not permitted/i.test(detail)) rec.trackingError = 'Android does not permit raw touch tracking on this device';
+    dbg(`android getevent stderr: ${detail}`);
+  });
   proc.on('error', (e) => dbg(`android getevent failed: ${e.message}`));
 }
 
@@ -532,11 +527,9 @@ async function stopAndroidRecording() {
   const stopWall = Date.now();
   const base = rec.base;
   const outMp4 = base + '.mp4';
+  clearInterval(rec.androidTimer);
   if (rec.touchProc && rec.touchProc.exitCode === null) {
     try { rec.touchProc.kill('SIGTERM'); } catch {}
-  }
-  if (rec.mirrorProc && rec.mirrorProc.exitCode === null) {
-    try { rec.mirrorProc.kill('SIGTERM'); } catch {}
   }
   if (rec.proc && rec.proc.exitCode === null) {
     rec.proc.kill('SIGINT');
@@ -545,14 +538,19 @@ async function stopAndroidRecording() {
       rec.proc.on('exit', () => { clearTimeout(t); r(); });
     });
   }
-  const pull = await execAdb(rec.androidSerial, ['pull', rec.remotePath, outMp4], 30000);
-  await execAdb(rec.androidSerial, ['shell', 'rm', '-f', rec.remotePath], 5000);
-  if (!pull.ok || !fs.existsSync(outMp4) || fs.statSync(outMp4).size === 0) {
-    rec.error = 'ดึงวิดีโอจาก Android ไม่สำเร็จ — ตรวจว่า USB debugging ยังเชื่อมต่ออยู่'
-      + (pull.stderr || pull.error ? `\n\nรายละเอียด: ${pull.stderr || pull.error}` : '');
+  if (!fs.existsSync(outMp4) || fs.statSync(outMp4).size === 0) {
+    rec.error = 'Android recording did not produce a playable file'
+      + (rec.capStderr ? `\n\nรายละเอียด: ${rec.capStderr.slice(-2000)}` : '');
     rec.processing = false;
     return;
   }
+  await finalizeAndroidRecording(stopWall);
+}
+
+async function finalizeAndroidRecording(stopWall) {
+  const base = rec.base;
+  const outMp4 = base + '.mp4';
+  if (!fs.existsSync(outMp4) || fs.statSync(outMp4).size === 0) throw new Error('Android recording stopped before a playable file was created');
   const dur = await ffprobeDuration(outMp4);
   let clicks = [];
   if (dur) {
@@ -580,6 +578,8 @@ function recordState() {
     hasClickTracking: loadUiohook() !== false,
     hookRunning: rec.hookRunning,
     debugLog: DEBUG_LOG,
+    androidConnected: rec.mode === 'android' ? rec.androidConnected : undefined,
+    trackingError: rec.mode === 'android' ? rec.trackingError : undefined,
   };
 }
 
@@ -591,14 +591,14 @@ const MIME = {
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
 };
 
-function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
+function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {}) {
   webRoot = webRoot || path.join(__dirname, '..');
   recordingsDir = recordingsDir || path.join(webRoot, 'recordings');
   const apiToken = createApiToken();
   const mediaPaths = new Map();
   const exportTargets = new Map();
   const exportJobs = new Map();
-  const maxExportBytes = Math.max(256 * 1024 * 1024, Number(process.env.ZOOMCUT_MAX_EXPORT_BYTES) || 64 * 1024 * 1024 * 1024);
+  const maxExportBytes = Math.max(256 * 1024 * 1024, Number(process.env.ZOOMCUT_MAX_EXPORT_BYTES) || 256 * 1024 * 1024 * 1024);
 
   const registerMediaPath = (filePath) => {
     const resolved = path.resolve(String(filePath || ''));
@@ -624,11 +624,69 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
     if (typeof supplied !== 'string' || supplied.length !== apiToken.length) return false;
     return crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(apiToken));
   };
-  const runRemux = (input, output, jobId) => new Promise((resolve, reject) => {
-    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-i', input,
-      '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-      '-pix_fmt', 'yuv420p', '-r', '30', '-vsync', 'cfr', '-c:a', 'aac', '-b:a', '192k',
-      '-movflags', '+faststart', output];
+  const hasAudio = filePath => new Promise(resolve => execFile(FFPROBE,
+    ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=index', '-of', 'csv=p=0', filePath],
+    { env: CHILD_ENV, timeout: 10000 }, (error, stdout) => resolve(!error && String(stdout).trim() !== '')));
+  const atempo = speed => {
+    const filters = [];
+    let value = Math.max(0.05, Number(speed) || 1);
+    while (value < 0.5) { filters.push('atempo=0.5'); value /= 0.5; }
+    while (value > 100) { filters.push('atempo=100'); value /= 100; }
+    filters.push(`atempo=${value.toFixed(6)}`);
+    return filters.join(',');
+  };
+  const offlineAudioArgs = async plan => {
+    const duration = Math.max(0.1, Math.min(86400, Number(plan?.duration) || 0.1));
+    const sources = [];
+    if (plan?.base?.path && await hasAudio(plan.base.path)) sources.push({ ...plan.base, kind: 'base' });
+    for (const clip of (plan?.clips || []).slice(0, 256)) if (clip.path && await hasAudio(clip.path)) sources.push({ ...clip, kind: 'clip' });
+    const inputArgs = ['-f', 'lavfi', '-t', String(duration), '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000'];
+    sources.forEach(source => inputArgs.push('-i', source.path));
+    const filters = [`[1:a]atrim=duration=${duration},asetpts=PTS-STARTPTS[silence]`];
+    const mix = ['[silence]'];
+    sources.forEach((source, index) => {
+      const input = index + 2;
+      if (source.kind === 'base') {
+        const labels = [];
+        (source.segments || []).forEach((segment, segmentIndex) => {
+          const label = `b${index}_${segmentIndex}`;
+          const start = Math.max(0, Number(segment.start) || 0);
+          const end = Math.max(start + 0.001, Number(segment.end) || start + 0.001);
+          const volume = Math.max(0, Math.min(4, Number(segment.volume ?? 1) || 0));
+          filters.push(`[${input}:a]atrim=start=${start}:end=${end},asetpts=PTS-STARTPTS,${atempo(segment.speed)},volume=${volume}[${label}]`);
+          labels.push(`[${label}]`);
+        });
+        if (labels.length) {
+          const label = `base${index}`;
+          filters.push(`${labels.join('')}concat=n=${labels.length}:v=0:a=1[${label}]`);
+          mix.push(`[${label}]`);
+        }
+      } else {
+        const label = `clip${index}`;
+        const start = Math.max(0, Number(source.offset) || 0);
+        const length = Math.max(0.01, Number(source.duration) || 0.01);
+        const delay = Math.max(0, Math.round((Number(source.outStart) || 0) * 1000));
+        const volume = Math.max(0, Math.min(4, Number(source.volume ?? 1) || 0));
+        filters.push(`[${input}:a]atrim=start=${start}:end=${start + length},asetpts=PTS-STARTPTS,volume=${volume},adelay=${delay}:all=1[${label}]`);
+        mix.push(`[${label}]`);
+      }
+    });
+    filters.push(`${mix.join('')}amix=inputs=${mix.length}:duration=first:normalize=0,atrim=duration=${duration}[mix]`);
+    return { inputArgs, filter: filters.join(';') };
+  };
+  const runRemux = async (input, output, jobId, metadata = {}) => {
+    let args;
+    if (metadata.ext === 'mjpeg') {
+      const audio = await offlineAudioArgs(metadata.audioPlan);
+      args = ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(metadata.fps || 30), '-vcodec', 'mjpeg', '-i', input,
+        ...audio.inputArgs, '-filter_complex', audio.filter, '-map', '0:v:0', '-map', '[mix]',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', output];
+    } else {
+      args = ['-y', '-hide_banner', '-loglevel', 'error', '-i', input,
+        '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+        '-pix_fmt', 'yuv420p', '-r', '30', '-vsync', 'cfr', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output];
+    }
+    return new Promise((resolve, reject) => {
     const proc = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
     exportJobs.set(jobId, proc);
     let stderr = '';
@@ -639,12 +697,13 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
       if (code === 0 && fs.existsSync(output)) resolve();
       else reject(new Error(signal ? 'export canceled' : (stderr.trim() || `ffmpeg exited ${code}`)));
     });
-  });
+    });
+  };
   const cancelRemux = (jobId) => {
     const proc = exportJobs.get(String(jobId || ''));
     if (proc && proc.exitCode === null) proc.kill('SIGTERM');
   };
-  const exportSessions = createExportSessionManager({ consumeTarget: consumeExportTarget, runRemux, cancelRemux, maxBytes: maxExportBytes });
+  const exportSessions = createExportSessionManager({ consumeTarget: consumeExportTarget, runRemux, cancelRemux, maxBytes: maxExportBytes, recoveryDir: exportRecoveryDir });
   const serveFile = (req, res, filePath, headers) => {
     const stat = fs.statSync(filePath);
     const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';

@@ -101,9 +101,8 @@ sourceRect(cam)       → แปลงกล้อง → พิกัดพิ�
 - `outputDuration()` = ผลรวม `(end-start)/speed`
 
 ### 4.5 Export
-`MediaRecorder(canvas.captureStream(60))` → preload ส่ง chunk ทีละก้อนเข้า `export-session.js` → temporary file → ffmpeg
-แปลงเป็น MP4 frame rate คงที่ (แก้อาการ "เล่นได้แค่ช่วงแรกแล้วค้าง")
-renderer ของ desktop ไม่ถือ export ทั้งไฟล์ใน RAM; เมื่อสำเร็จจะ rename `.part.mp4` ไปยังปลายทาง. บนเว็บจะ fallback ดาวน์โหลด blob เดิม
+Desktop export คำนวณ output time ทีละเฟรมที่ 30 fps → seek base/overlay/camera → วาด canvas เป็น MJPEG chunks → `export-session.js` → ffmpeg H.264/AAC. Audio graph ประกอบ base segments, speed, lane mute, overlay และ voice โดยไม่ผูกกับ wall-clock playback.
+ก่อนเริ่มจะตรวจพื้นที่ disk; session มี journal ใน `userData/export-recovery` และล้าง input/`.part.mp4` ที่เหลือจาก crash เมื่อเปิดแอปครั้งถัดไป. บนเว็บยัง fallback เป็น MediaRecorder blob.
 
 ### 4.7 Project persistence
 ไฟล์ `.zoomcut` เก็บ schema version, settings, lanes, trims, zooms และ media paths. Autosave เขียนแบบ atomic ไปที่ `userData/recovery`; voice/camera ที่อัดในแอปเก็บแบบ content-addressed ใน `userData/project-assets`. เปิดโปรเจกต์แล้วหา media ไม่เจอจะขอ relink.
@@ -136,7 +135,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 - **แจกแจงหน้าต่าง/จอ**: JXA (`osascript -l JavaScript -e <script>`) เรียก CGWindowList / NSScreen — **ฝัง script เป็นสตริง inline** (ดูกับดัก #1)
 - **Time-sync**: `screencapture` เขียนไฟล์ตอน "หยุด" ไม่ใช่ระหว่างอัด (ดูกับดัก #2) → คลิกเก็บเป็น wall-clock time แล้วตอนจบคำนวณ `frame0 = stopWall - duration` เพื่อ map เวลาคลิกให้ตรงเฟรมจริง
 - **แปลง**: `.mov` → `.mp4` (copy ถ้า h264, ไม่งั้น transcode) แล้วเขียน `.clicks.json`
-- **Android runtime**: release build ดาวน์โหลด official portable scrcpy 4.0 ตามสถาปัตยกรรม ตรวจ SHA-256 แล้ว bundle `adb`, `scrcpy`, `scrcpy-server`; ผู้ใช้ไม่ต้องติดตั้งเอง
+- **Android runtime**: release build ดาวน์โหลด official portable scrcpy 4.0 ตามสถาปัตยกรรม ตรวจ SHA-256 แล้ว bundle `adb`, `scrcpy`, `scrcpy-server`; Android ใช้ scrcpy process เดียวสำหรับ preview+record ลง Mac และ poll orientation เพื่อแปลง touch coordinates
 
 ---
 
@@ -182,7 +181,6 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 - [ ] Windows EXE (backend อัดด้วย ffmpeg แทน screencapture ซึ่งเป็น macOS-only)
 - [ ] Notarize (ต้องมี Apple Developer $99/ปี) → เปิดได้เนียนไม่มีเตือน
 - [ ] ไอคอนแอป (ตอนนี้ใช้ default Electron)
-- [ ] deterministic/offline frame renderer (ปัจจุบัน canvas export ยัง realtime)
 - [ ] Android real-device matrix + public-distribution license review (runtime bundle ทำแล้ว)
 - [ ] Debug log อยู่ที่ `/tmp/zoomcut-debug.log` (จาก `dbg()` ใน server.js)
 

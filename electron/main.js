@@ -55,6 +55,7 @@ async function createWindow() {
   serverInfo = await startServer({
     webRoot: webRoot(),
     recordingsDir: path.join(app.getPath('userData'), 'recordings'),
+    exportRecoveryDir: path.join(app.getPath('userData'), 'export-recovery'),
     port: 0,
   });
 
@@ -102,6 +103,12 @@ async function createWindow() {
       if (!authorizedMediaPaths.has(resolved)) throw new Error('Media path is not authorized by the opened project');
       return serverInfo.registerMediaPath(resolved);
     });
+    handle('media:authorize-user-file', (filePath) => {
+      const resolved = path.resolve(String(filePath || ''));
+      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Selected media file not found');
+      authorizedMediaPaths.add(resolved);
+      return { ok: true };
+    });
     handle('media:register-recording', (base) => {
       const safeBase = path.basename(String(base || '')).replace(/[^a-zA-Z0-9_.-]/g, '');
       const result = serverInfo.registerMediaPath(path.join(serverInfo.recordingsDir, safeBase + '.mp4'));
@@ -134,7 +141,18 @@ async function createWindow() {
       const filePath = result.filePath.endsWith('.mp4') ? result.filePath : result.filePath + '.mp4';
       return { canceled: false, ...serverInfo.registerExportTarget(filePath) };
     });
-    handle('export:begin', (options) => serverInfo.exportSessions.begin(options || {}));
+    handle('export:begin', (options = {}) => {
+      const plan = options.audioPlan;
+      if (plan && (!Array.isArray(plan.clips) || plan.clips.length > 256)) throw new Error('Invalid export audio plan');
+      if (plan?.base && (!Array.isArray(plan.base.segments) || plan.base.segments.length > 1000)) throw new Error('Invalid base audio plan');
+      for (const item of [plan?.base, ...(plan?.clips || [])]) {
+        if (!item?.path) continue;
+        const resolved = path.resolve(item.path);
+        if (!authorizedMediaPaths.has(resolved)) throw new Error('Export audio source is not authorized');
+        item.path = resolved;
+      }
+      return serverInfo.exportSessions.begin(options);
+    });
     handle('export:append', (sessionId, arrayBuffer) => serverInfo.exportSessions.append(sessionId, arrayBuffer));
     handle('export:finish', (sessionId) => serverInfo.exportSessions.finish(sessionId));
     handle('export:cancel', (sessionId) => serverInfo.exportSessions.cancel(sessionId));

@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { createExportSessionManager, MAX_CHUNK_BYTES } = require('../electron/export-session');
+const { createExportSessionManager, MAX_CHUNK_BYTES, cleanupStaleExports } = require('../electron/export-session');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zoomcut-export-session-test-'));
@@ -44,5 +44,21 @@ test('export session enforces total and per-chunk limits and cleans canceled ses
   assert.deepEqual(canceled, ['job-2']);
   assert.equal(manager.activeCount(), 0);
   assert.deepEqual(fs.readdirSync(root), []);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('stale export journals clean crash leftovers on next launch', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zoomcut-stale-export-test-'));
+  const recovery = path.join(root, 'recovery');
+  const tempDir = fs.mkdtempSync(path.join(root, 'zoomcut-export-stream-'));
+  const inputPath = path.join(tempDir, 'input.webm');
+  const outputPart = path.join(root, 'video.mp4.zoomcut-aabbcc.part.mp4');
+  fs.mkdirSync(recovery);
+  fs.writeFileSync(inputPath, 'partial');
+  fs.writeFileSync(outputPart, 'partial');
+  fs.writeFileSync(path.join(recovery, 'export-aabbcc.json'), JSON.stringify({ inputPath, outputPart, tempDir }));
+  assert.equal(cleanupStaleExports(recovery, root), 1);
+  assert.equal(fs.existsSync(inputPath), false);
+  assert.equal(fs.existsSync(outputPart), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
