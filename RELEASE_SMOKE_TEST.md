@@ -10,6 +10,10 @@
 
 ## 1.1 Layout Resize
 
+- ที่ 1440×900, 1100×720 และ 900×600 ต้องไม่มี scrollbar แนวนอนทั้งหน้า และข้อความ/ปุ่มห้ามทับกัน
+- กด tool rail ครบ `Media`, `Record`, `Audio`, `Camera`, `Clicks`, `Style`, `Export`, `Settings`; control ต้องเปลี่ยนตาม panel โดยไม่สูญหาย
+- ยุบ sidebar แล้วกด tool rail ต้องเปิด sidebar กลับมาที่ panel ที่เลือก
+- เลือก video, voice, camera และ zoom clip; inspector ด้านขวาต้องแสดง property ที่ตรงชนิดและปิดได้ด้วย `×`/`Esc`
 - ลากเส้นแบ่งแนวตั้งระหว่าง sidebar กับ preview ไปซ้าย/ขวาได้
 - ลากเส้นแบ่งแนวนอนระหว่าง preview กับ timeline ขึ้น/ลงได้
 - ปิด/เปิดแอปใหม่แล้วขนาด panel ต้องจำค่าล่าสุด

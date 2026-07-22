@@ -25,6 +25,9 @@
 ```
 index.html            ← ตัวแก้ไข/ตัดต่อทั้งหมด (vanilla JS + <canvas>, ไม่มี build step)
 shared/editor-core.js ← project schema + pure timeline/project helpers (ใช้ได้ทั้ง browser/Node tests)
+shared/editor-shell.js← จัด panel/inspector และเชื่อม UI shell ใหม่กับ control เดิมโดยไม่ทำ state ซ้ำ
+shared/editor-shell.css← layout แบบ NLE: tool rail, sidebar, preview, inspector, timeline
+shared/lucide.min.js  ← icon runtime ที่ bundle ในแอป (ไม่เรียก CDN ตอนใช้งาน)
 electron/
   main.js             ← Electron main: เปิด server ในตัว + สร้างหน้าต่าง โหลด http://127.0.0.1:<port>
   server.js           ← HTTP server + ตรรกะอัดจอ (พอร์ตจาก record.py/serve.py มาเป็น Node)
@@ -71,6 +74,8 @@ bash electron/build-signed.sh      # ได้ dist/ZoomCut-<ver>-arm64.dmg
 ## 4. สถาปัตยกรรม renderer (`index.html`)
 
 renderer หลักเป็น vanilla JS และวาดลง `<canvas id="canvas">`; pure data rules แยกไว้ใน `shared/editor-core.js`
+
+UI ใช้ `#editorShell` เป็น CSS grid 5 คอลัมน์: tool rail, sidebar, splitter, preview และ inspector โดย timeline อยู่แถวล่างเต็มความกว้าง. `shared/editor-shell.js` ย้าย DOM control เดิมเข้า panel ตามบริบทตอนเริ่มแอป จึงยังใช้ event handler, ID และ `state` ชุดเดิมทั้งหมด. เวลาเพิ่ม feature ให้คง ID เดิมไว้และ map heading/control ไป panel ที่เหมาะสม ห้าม clone control เพราะจะทำให้ state กับ event handler แยกกันสองชุด.
 
 ### 4.1 State กลาง
 มี object `state` เดียวเก็บทุกอย่าง (mode, aspect, crop, segments, events, frame, bg, ฯลฯ)

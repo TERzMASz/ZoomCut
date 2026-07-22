@@ -795,11 +795,12 @@
     margin-top: 6px;
   }
 </style>
+<link rel="stylesheet" href="/shared/editor-shell.css">
 </head>
 <body>
 
-<header>
-  <span class="logo">🎬 ZoomCut</span>
+<header class="app-topbar">
+  <span class="logo"><span class="logo-mark">Z</span>ZoomCut</span>
   <span class="hint" id="appHint">อัดหน้าจอ iPhone (Control Center) → ลากไฟล์มาที่นี่ → คลิกจุดที่อยากซูม → Export</span>
   <span class="spacer"></span>
   <select id="langSel" class="mini-select" style="width:78px;flex:0 0 auto" title="Language">
@@ -822,16 +823,56 @@
   <button class="btn primary" id="exportBtn" disabled>⬇️ Export วิดีโอ</button>
 </header>
 
-<main>
-  <div class="sidebar">
-    <h3>Preset</h3>
+<main id="editorShell">
+  <nav class="editor-rail" id="editorRail" aria-label="Editor tools">
+    <button class="rail-tool active" data-shell-panel="media" title="Media"><i data-lucide="clapperboard"></i><span data-rail-label="media">สื่อ</span></button>
+    <button class="rail-tool" data-shell-panel="record" title="Record"><i data-lucide="circle-dot"></i><span data-rail-label="record">อัด</span></button>
+    <button class="rail-tool" data-shell-panel="audio" title="Audio"><i data-lucide="audio-lines"></i><span data-rail-label="audio">เสียง</span></button>
+    <button class="rail-tool" data-shell-panel="camera" title="Camera"><i data-lucide="camera"></i><span data-rail-label="camera">กล้อง</span></button>
+    <button class="rail-tool" data-shell-panel="clicks" title="Click and zoom"><i data-lucide="mouse-pointer-click"></i><span data-rail-label="clicks">คลิก</span></button>
+    <button class="rail-tool" data-shell-panel="style" title="Style"><i data-lucide="palette"></i><span data-rail-label="style">สไตล์</span></button>
+    <button class="rail-tool" data-shell-panel="export" title="Export"><i data-lucide="upload"></i><span data-rail-label="export">ส่งออก</span></button>
+    <span class="rail-spacer"></span>
+    <button class="rail-tool" data-shell-panel="settings" title="Settings"><i data-lucide="settings"></i><span data-rail-label="settings">ตั้งค่า</span></button>
+  </nav>
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-shell-head"><strong id="sidebarShellTitle">สื่อในโปรเจกต์</strong><button class="icon-button" id="sidebarCollapse" title="Collapse panel"><i data-lucide="panel-left-close"></i></button></div>
+    <div class="shell-panel-intro" data-editor-panel="media">
+      <button class="shell-primary-action" id="shellAddMedia"><i data-lucide="plus"></i><span>เพิ่มไฟล์</span></button>
+      <div class="shell-action-grid"><button class="shell-action" id="shellRecordMedia"><i data-lucide="monitor-dot"></i><span>อัดหน้าจอ</span></button><button class="shell-action" id="shellVoiceMedia"><i data-lucide="mic"></i><span>พากย์เสียง</span></button></div>
+    </div>
+    <div class="shell-panel-intro" data-editor-panel="record">
+      <div class="shell-section-copy"><strong data-shell-copy="recordTitle">เริ่มอัดหน้าจอ</strong><span data-shell-copy="recordBody">เลือกหน้าต่าง จอ iPhone หรือ Android แล้วเริ่มอัดจากที่เดียว</span></div>
+      <button class="shell-primary-action record-action" id="shellStartRecord"><i data-lucide="circle-dot"></i><span data-shell-copy="recordStart">เลือกสิ่งที่จะอัด</span></button>
+      <button class="shell-secondary-action" id="shellDiagnostics"><i data-lucide="stethoscope"></i><span data-shell-copy="diagnostics">ตรวจความพร้อมระบบ</span></button>
+    </div>
+    <div class="shell-panel-intro" data-editor-panel="audio">
+      <div class="shell-section-copy"><strong data-shell-copy="audioTitle">เสียงบรรยาย</strong><span data-shell-copy="audioBody">เลือกไมโครโฟนก่อนเริ่มพากย์จากตำแหน่ง playhead</span></div>
+      <div class="device-slot" id="audioDeviceSlot"></div>
+      <button class="shell-primary-action" id="shellStartVoice"><i data-lucide="mic"></i><span>เริ่มพากย์เสียง</span></button>
+    </div>
+    <div class="shell-panel-intro" data-editor-panel="camera">
+      <div class="shell-section-copy"><strong data-shell-copy="cameraTitle">กล้องผู้บรรยาย</strong><span data-shell-copy="cameraBody">กล้องจะถูกอัดเป็นคลิปแยกและแก้ตำแหน่งภายหลังได้</span></div>
+      <div class="device-slot" id="cameraDeviceSlot"></div>
+    </div>
+    <div class="shell-panel-intro" data-editor-panel="export">
+      <div class="shell-section-copy"><strong data-shell-copy="exportTitle">ตั้งค่าการส่งออก</strong><span data-shell-copy="exportBody">เลือกความละเอียดก่อนเปิดหน้าต่าง Export</span></div>
+      <div class="device-slot" id="exportPresetSlot"></div>
+      <button class="shell-primary-action" id="shellExport"><i data-lucide="upload"></i><span>Export วิดีโอ</span></button>
+      <button class="shell-secondary-action" id="shellSnapshot"><i data-lucide="image-down"></i><span>บันทึกเฟรม PNG</span></button>
+    </div>
+    <div class="shell-panel-intro" data-editor-panel="settings">
+      <div class="shell-section-copy"><strong data-shell-copy="settingsTitle">แอปและโปรเจกต์</strong><span data-shell-copy="settingsBody">ภาษา ธีม คีย์ลัด และเครื่องมือตรวจสอบ</span></div>
+      <div class="settings-slot" id="settingsSlot"></div>
+    </div>
+    <h3 id="sectionPreset">Preset</h3>
     <div class="row">
       <select id="presetSel" class="mini-select"><option value="">— เลือก preset —</option></select>
       <button class="btn small" id="presetSave" title="บันทึกค่าปัจจุบันเป็น preset">💾</button>
       <button class="btn small danger" id="presetDel" title="ลบ preset ที่เลือก">🗑</button>
     </div>
 
-    <h3>สัดส่วนภาพ</h3>
+    <h3 id="sectionAspect">สัดส่วนภาพ</h3>
     <div class="row" id="aspectRow">
       <div class="chip" data-aspect="16:9">16:9</div>
       <div class="chip active" data-aspect="9:16">9:16</div>
@@ -840,14 +881,14 @@
       <div class="chip" data-aspect="fit" title="พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ">📐 พอดีเฟรม</div>
     </div>
 
-    <h3>ตำแหน่งแนวตั้ง</h3>
+    <h3 id="sectionPosition">ตำแหน่งแนวตั้ง</h3>
     <div class="row" id="posRow">
       <div class="chip" data-pos="top">บน</div>
       <div class="chip active" data-pos="center">กลาง</div>
       <div class="chip" data-pos="bottom">ล่าง</div>
     </div>
 
-    <h3>กรอบอุปกรณ์</h3>
+    <h3 id="sectionFrame">กรอบอุปกรณ์</h3>
     <div class="row" id="frameRow">
       <div class="chip active" data-frame="none">ไม่มี</div>
       <div class="chip" data-frame="iphone">📱 iPhone</div>
@@ -856,7 +897,7 @@
     <div class="row" id="phoneColors" style="margin-top:8px; display:none; gap:8px"></div>
     <input type="text" id="urlText" class="url-input" placeholder="yourwebsite.com" style="display:none">
 
-    <h3>Status Bar (iPhone)</h3>
+    <h3 id="sectionStatusBar">Status Bar (iPhone)</h3>
     <div class="row" id="sbRow">
       <div class="chip active" data-sb="none">ปิด</div>
       <div class="chip" data-sb="auto">ออโต้</div>
@@ -864,13 +905,13 @@
       <div class="chip" data-sb="dark">มืด</div>
     </div>
 
-    <h3>เอฟเฟกต์จุดแตะ</h3>
+    <h3 id="sectionTap">เอฟเฟกต์จุดแตะ</h3>
     <div class="row" id="tapRow">
       <div class="chip active" data-tap="on">💧 แสดง</div>
       <div class="chip" data-tap="off">ปิด</div>
     </div>
 
-    <h3>พื้นหลัง</h3>
+    <h3 id="sectionBackground">พื้นหลัง</h3>
     <div class="bg-grid" id="bgGrid"></div>
     <div class="row" style="margin-top:8px; align-items:center">
       <input type="color" id="cg1" value="#0ea5e9" title="gradient กำหนดเอง สี 1">
@@ -879,7 +920,7 @@
       <div class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</div>
     </div>
 
-    <h3>เฟรมวิดีโอ</h3>
+    <h3 id="sectionVideoFrame">เฟรมวิดีโอ</h3>
     <div class="slider-row">
       <label>ขอบรอบ</label>
       <input type="range" id="padding" min="0" max="20" value="0">
@@ -896,8 +937,8 @@
       <span class="val" id="shadowVal">60</span>
     </div>
 
-    <h3>ตัดขอบ (Crop)</h3>
-    <div class="tip" style="margin-top:0">ตัดขอบหน้าต่าง iPhone Mirroring ออก เพื่อไม่ให้เห็นขอบตอนซูม</div>
+    <h3 id="sectionCrop">ตัดขอบ (Crop)</h3>
+    <div class="tip" id="cropTip" style="margin-top:0">ตัดขอบหน้าต่าง iPhone Mirroring ออก เพื่อไม่ให้เห็นขอบตอนซูม</div>
     <div class="slider-row">
       <label>บน</label>
       <input type="range" id="cropT" min="0" max="40" value="0" step="0.5">
@@ -924,7 +965,7 @@
       <div class="chip" id="debugToggle" title="แสดงพิกัด crop/source/camera สำหรับตรวจ zoom">🧭 Debug</div>
     </div>
 
-    <h3>ค่าเริ่มต้นการซูม</h3>
+    <h3 id="sectionZoomDefaults">ค่าเริ่มต้นการซูม</h3>
     <div class="row" id="zoomStyleRow">
       <div class="chip active" data-zoom-style="subtle">Subtle</div>
       <div class="chip" data-zoom-style="focus">Focus</div>
@@ -944,7 +985,7 @@
     </div>
 
     <div id="imgExportSec" style="display:none">
-      <h3>ความละเอียด Export (PNG)</h3>
+      <h3 id="sectionImageExport">ความละเอียด Export (PNG)</h3>
       <div class="row" id="scaleRow">
         <div class="chip" data-scale="1">1x</div>
         <div class="chip active" data-scale="2">2x</div>
@@ -1081,6 +1122,11 @@
       </div>
     </div>
   </div>
+  <aside class="context-inspector" id="contextInspector">
+    <div class="inspector-head"><div><span class="inspector-kicker" id="inspectorKicker">Inspector</span><strong id="inspectorTitle">ยังไม่ได้เลือกคลิป</strong></div><button class="icon-button" id="inspectorCollapse" title="Collapse inspector"><i data-lucide="panel-right-close"></i></button></div>
+    <div class="inspector-empty" id="inspectorEmpty"><i data-lucide="mouse-pointer-2"></i><strong>เลือกสิ่งที่ต้องการแก้ไข</strong><span>เลือกวิดีโอ เสียง กล้อง หรือจุดซูมบน timeline เพื่อดูคุณสมบัติ</span></div>
+    <div class="inspector-content" id="inspectorContent"></div>
+  </aside>
 </main>
 
 <div id="pickerOverlay">
@@ -1126,6 +1172,7 @@
 <input type="file" id="bgImageInput" accept="image/*">
 <video id="video" style="display:none" playsinline></video>
 
+<script src="/shared/lucide.min.js"></script>
 <script src="/shared/editor-core.js"></script>
 <script>
 'use strict';
@@ -1515,17 +1562,17 @@ function applyLanguage() {
   if (video.paused) $('playBtn').textContent = tr('play');
   if ($('shortcutOverlay').classList.contains('visible')) openShortcutHelp();
   const textMap = [
-    ['.sidebar h3:nth-of-type(1)', 'preset'], ['.sidebar h3:nth-of-type(2)', 'aspect'],
-    ['#aspectRow [data-aspect="fit"]', 'fitFrame'], ['.sidebar h3:nth-of-type(3)', 'verticalPosition'],
+    ['#sectionPreset', 'preset'], ['#sectionAspect', 'aspect'],
+    ['#aspectRow [data-aspect="fit"]', 'fitFrame'], ['#sectionPosition', 'verticalPosition'],
     ['#posRow [data-pos="top"]', 'top'], ['#posRow [data-pos="center"]', 'center'], ['#posRow [data-pos="bottom"]', 'bottom'],
-    ['.sidebar h3:nth-of-type(4)', 'deviceFrame'], ['#frameRow [data-frame="none"]', 'none'], ['#frameRow [data-frame="browser"]', 'browser'],
-    ['.sidebar h3:nth-of-type(5)', 'statusBar'], ['#sbRow [data-sb="none"]', 'off'], ['#sbRow [data-sb="auto"]', 'auto'],
+    ['#sectionFrame', 'deviceFrame'], ['#frameRow [data-frame="none"]', 'none'], ['#frameRow [data-frame="browser"]', 'browser'],
+    ['#sectionStatusBar', 'statusBar'], ['#sbRow [data-sb="none"]', 'off'], ['#sbRow [data-sb="auto"]', 'auto'],
     ['#sbRow [data-sb="light"]', 'light'], ['#sbRow [data-sb="dark"]', 'dark'],
-    ['.sidebar h3:nth-of-type(6)', 'tapEffect'], ['#tapRow [data-tap="on"]', 'show'], ['#tapRow [data-tap="off"]', 'off'],
-    ['.sidebar h3:nth-of-type(7)', 'background'], ['#bgImageBtn', 'imageBg'], ['#bgTransBtn', 'transparent'],
-    ['.sidebar h3:nth-of-type(8)', 'videoFrame'], ['label[for="padding"]', 'padding'],
-    ['.sidebar h3:nth-of-type(9)', 'crop'], ['#cropReset', 'cropReset'], ['#cropToggle', 'cropGuide'],
-    ['.sidebar h3:nth-of-type(10)', 'zoomDefaults'], ['.sidebar h3:nth-of-type(11)', 'exportResolution'],
+    ['#sectionTap', 'tapEffect'], ['#tapRow [data-tap="on"]', 'show'], ['#tapRow [data-tap="off"]', 'off'],
+    ['#sectionBackground', 'background'], ['#bgImageBtn', 'imageBg'], ['#bgTransBtn', 'transparent'],
+    ['#sectionVideoFrame', 'videoFrame'], ['label[for="padding"]', 'padding'],
+    ['#sectionCrop', 'crop'], ['#cropReset', 'cropReset'], ['#cropToggle', 'cropGuide'],
+    ['#sectionZoomDefaults', 'zoomDefaults'], ['#sectionImageExport', 'exportResolution'],
     ['#voiceDelete', 'voiceDelete'], ['#segDelete', 'segDelete'], ['#markerEdit > span:first-child', 'zoomMarker'],
     ['#mGrowL', 'growLeft'], ['#mGrowR', 'growRight'], ['#mDelete', 'delete'],
     ['#pickerOverlay h2', 'pickerTitle'], ['#pickerOverlay .sub', 'pickerSub'], ['#pickerCancel', 'cancel'],
@@ -1551,7 +1598,7 @@ function applyLanguage() {
       || $(inputId)?.closest('.slider-row, span')?.querySelector('label');
     if (label) label.textContent = tr(key) + ' ';
   }
-  const cropTip = document.querySelector('.sidebar h3:nth-of-type(9) + .tip');
+  const cropTip = $('cropTip');
   if (cropTip) cropTip.textContent = tr('cropTip');
   const tips = document.querySelectorAll('.sidebar > .tip');
   if (tips.length) tips[tips.length - 1].innerHTML = tr('helpTip');
@@ -1584,6 +1631,7 @@ function applyLanguage() {
   updateSegUI();
   updateVoiceUI();
   updateCameraUI();
+  queueMicrotask(() => globalThis.refreshEditorShellIcons?.());
 }
 
 const PHONE_COLORS = [
@@ -2010,7 +2058,9 @@ function enterLoadedUI() {
   $('exportBtn').textContent = isVideo ? tr('exportVideo') : tr('exportPng');
   $('imgExportSec').style.display = isVideo ? 'none' : '';
   document.querySelector('.timeline-area').style.display = isVideo ? '' : 'none';
+  $('editorShell').classList.toggle('timeline-hidden', !isVideo);
   updateTimelineScale();
+  queueMicrotask(() => globalThis.refreshEditorShellIcons?.());
 }
 
 function loadImage(file) {
@@ -4186,6 +4236,7 @@ $('newBtn').onclick = () => {
   $('exportBtn').textContent = tr('exportVideo');
   $('imgExportSec').style.display = 'none';
   document.querySelector('.timeline-area').style.display = '';
+  $('editorShell').classList.remove('timeline-hidden');
   $('zoomCount').textContent = '';
   $('timeLabel').textContent = '0:00.0 / 0:00.0';
   playhead.style.left = '0';
@@ -4199,6 +4250,7 @@ $('newBtn').onclick = () => {
   $('segEdit').classList.remove('visible');
   $('voiceEdit').classList.remove('visible');
   $('cameraEdit').classList.remove('visible');
+  queueMicrotask(() => globalThis.refreshEditorShellIcons?.());
 };
 
 // ---------- Export PNG (ภาพนิ่ง / เฟรมปัจจุบัน) ----------
@@ -4532,12 +4584,14 @@ applyTheme();
 applyLanguage();
 
 function applyStoredPanelSizes() {
-  const sidebarW = parseFloat(localStorage.getItem('zoomcut-sidebar-width')) || 260;
-  const timelineH = parseFloat(localStorage.getItem('zoomcut-timeline-height')) || 190;
-  document.querySelector('.sidebar').style.width = clamp(sidebarW, 180, 460) + 'px';
-  document.querySelector('.timeline-area').style.height = clamp(timelineH, 118, window.innerHeight * 0.45) + 'px';
+  const sidebarW = parseFloat(localStorage.getItem('zoomcut-sidebar-width')) || 222;
+  const timelineH = parseFloat(localStorage.getItem('zoomcut-timeline-height')) || 276;
+  const shell = $('editorShell');
+  shell.style.setProperty('--sidebar-width', clamp(sidebarW, 190, 340) + 'px');
+  shell.style.setProperty('--timeline-height', clamp(timelineH, 210, window.innerHeight * 0.48) + 'px');
 }
 function initSplitters() {
+  const shell = $('editorShell');
   const sidebar = document.querySelector('.sidebar');
   const timelineArea = document.querySelector('.timeline-area');
   const sideSplit = $('sidebarSplitter');
@@ -4549,8 +4603,8 @@ function initSplitters() {
     const startX = e.clientX;
     const startW = sidebar.getBoundingClientRect().width;
     const move = ev => {
-      const next = clamp(startW + ev.clientX - startX, 180, Math.min(520, window.innerWidth * 0.38));
-      sidebar.style.width = next + 'px';
+      const next = clamp(startW + ev.clientX - startX, 190, Math.min(340, window.innerWidth * 0.3));
+      shell.style.setProperty('--sidebar-width', next + 'px');
       localStorage.setItem('zoomcut-sidebar-width', String(Math.round(next)));
       requestRender();
     };
@@ -4570,10 +4624,10 @@ function initSplitters() {
     timeSplit.setPointerCapture(e.pointerId);
     const startY = e.clientY;
     const startH = timelineArea.getBoundingClientRect().height;
-    const wrapH = document.querySelector('.stage-wrap').getBoundingClientRect().height;
+    const wrapH = shell.getBoundingClientRect().height;
     const move = ev => {
-      const next = clamp(startH + startY - ev.clientY, 118, Math.max(160, wrapH * 0.58));
-      timelineArea.style.height = next + 'px';
+      const next = clamp(startH + startY - ev.clientY, 210, Math.max(240, wrapH * 0.58));
+      shell.style.setProperty('--timeline-height', next + 'px');
       localStorage.setItem('zoomcut-timeline-height', String(Math.round(next)));
       requestRender();
     };
@@ -4876,5 +4930,6 @@ async function loadFromServer(base) {
 const autoBase = new URLSearchParams(location.search).get('autoload');
 if (autoBase && /^recordings\/[\w.-]+$/.test(autoBase)) loadFromServer(autoBase);
 </script>
+<script src="/shared/editor-shell.js"></script>
 </body>
 </html>
