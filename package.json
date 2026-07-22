@@ -10,6 +10,7 @@
     "postinstall": "electron-rebuild -f -w uiohook-napi || true",
     "dist:mac": "electron-builder --mac dmg",
     "server": "node electron/server.js",
+    "stage:android-tools": "bash scripts/stage-android-tools.sh",
     "test": "node test/coordinate-math.test.js"
   },
   "build": {
@@ -18,6 +19,15 @@
     "files": [
       "electron/**/*",
       "index.html"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "mac": {
       "target": "dmg",

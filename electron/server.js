@@ -7,8 +7,20 @@ const os = require('os');
 const { spawn, execFile } = require('child_process');
 
 // แอป GUI (เปิดจาก Finder) มี PATH จำกัด ไม่รวม /opt/homebrew/bin → ต้องระบุ path ให้ชัด
+function platformKey() {
+  const p = process.platform === 'darwin' ? 'darwin' : process.platform;
+  const a = process.arch === 'arm64' ? 'arm64' : process.arch;
+  return `${p}-${a}`;
+}
+function bundledBin(name) {
+  const base = process.resourcesPath || path.join(__dirname, '..', 'resources');
+  return path.join(base, 'bin', platformKey(), name);
+}
+function localResourceBin(name) {
+  return path.join(__dirname, '..', 'resources', 'bin', platformKey(), name);
+}
 function resolveBin(name, candidates) {
-  for (const c of candidates) { try { if (fs.existsSync(c)) return c; } catch {} }
+  for (const c of [bundledBin(name), localResourceBin(name), ...candidates]) { try { if (fs.existsSync(c)) return c; } catch {} }
   return name; // สุดท้ายพึ่ง PATH
 }
 const OSASCRIPT = '/usr/bin/osascript';
@@ -18,7 +30,14 @@ const FFPROBE = resolveBin('ffprobe', ['/opt/homebrew/bin/ffprobe', '/usr/local/
 const ADB = resolveBin('adb', ['/opt/homebrew/bin/adb', '/usr/local/bin/adb', path.join(os.homedir(), 'Library/Android/sdk/platform-tools/adb')]);
 const SCRCPY = resolveBin('scrcpy', ['/opt/homebrew/bin/scrcpy', '/usr/local/bin/scrcpy']);
 // PATH เสริมสำหรับ child process ทุกตัว
-const CHILD_ENV = { ...process.env, PATH: ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin', process.env.PATH || ''].join(':') };
+const BIN_DIR = path.dirname(ADB !== 'adb' ? ADB : localResourceBin('adb'));
+const SCRCPY_SERVER = fs.existsSync(path.join(path.dirname(SCRCPY), 'scrcpy-server')) ? path.join(path.dirname(SCRCPY), 'scrcpy-server') : process.env.SCRCPY_SERVER_PATH;
+const CHILD_ENV = {
+  ...process.env,
+  PATH: [BIN_DIR, '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin', process.env.PATH || ''].join(':'),
+  DYLD_LIBRARY_PATH: [path.join(path.dirname(SCRCPY), 'lib'), process.env.DYLD_LIBRARY_PATH || ''].filter(Boolean).join(':'),
+};
+if (SCRCPY_SERVER) CHILD_ENV.SCRCPY_SERVER_PATH = SCRCPY_SERVER;
 
 // ---------- utilities ----------
 // สำคัญ: ฝัง JXA เป็นสตริงส่งตรงให้ osascript (-e) แทนการอ้างไฟล์
@@ -219,13 +238,13 @@ function loadUiohook() {
 // ---------- recording state ----------
 const rec = {
   active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-  proc: null, touchProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
+  proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
   finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '',
 };
 
 function resetRec() {
   Object.assign(rec, { active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-    proc: null, touchProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, finished: false, error: null, capStderr: '', ffmpegError: '' });
+    proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, finished: false, error: null, capStderr: '', ffmpegError: '' });
 }
 
 async function startRecording(recordingsDir, opts) {
@@ -341,8 +360,21 @@ async function startAndroidRecording(base, serial) {
     }
   });
   startAndroidTouchTracking(serial, touch);
+  startAndroidMirror(serial);
   dbg(`android screenrecord serial=${serial} remote=${remote} touch=${touch ? touch.device : 'auto'}`);
   return { base: path.basename(base) };
+}
+
+function startAndroidMirror(serial) {
+  if (!fs.existsSync(SCRCPY) && SCRCPY === 'scrcpy') {
+    dbg('scrcpy unavailable: Android mirror preview disabled');
+    return;
+  }
+  const args = ['--serial', serial, '--window-title', `ZoomCut Android ${serial}`, '--stay-awake', '--no-audio'];
+  const proc = spawn(SCRCPY, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+  rec.mirrorProc = proc;
+  proc.stderr.on('data', (buf) => dbg(`scrcpy stderr: ${String(buf).trim()}`));
+  proc.on('error', (e) => dbg(`scrcpy start failed: ${e.message}`));
 }
 
 function startAndroidTouchTracking(serial, touch) {
@@ -479,6 +511,9 @@ async function stopAndroidRecording() {
   const outMp4 = base + '.mp4';
   if (rec.touchProc && rec.touchProc.exitCode === null) {
     try { rec.touchProc.kill('SIGTERM'); } catch {}
+  }
+  if (rec.mirrorProc && rec.mirrorProc.exitCode === null) {
+    try { rec.mirrorProc.kill('SIGTERM'); } catch {}
   }
   if (rec.proc && rec.proc.exitCode === null) {
     rec.proc.kill('SIGINT');
