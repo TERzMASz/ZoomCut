@@ -15,6 +15,8 @@ const OSASCRIPT = '/usr/bin/osascript';
 const SCREENCAPTURE = '/usr/sbin/screencapture';
 const FFMPEG = resolveBin('ffmpeg', ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg']);
 const FFPROBE = resolveBin('ffprobe', ['/opt/homebrew/bin/ffprobe', '/usr/local/bin/ffprobe', '/usr/bin/ffprobe']);
+const ADB = resolveBin('adb', ['/opt/homebrew/bin/adb', '/usr/local/bin/adb', path.join(os.homedir(), 'Library/Android/sdk/platform-tools/adb')]);
+const SCRCPY = resolveBin('scrcpy', ['/opt/homebrew/bin/scrcpy', '/usr/local/bin/scrcpy']);
 // PATH เสริมสำหรับ child process ทุกตัว
 const CHILD_ENV = { ...process.env, PATH: ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin', process.env.PATH || ''].join(':') };
 
@@ -119,14 +121,58 @@ function binStatus(name, bin, args = ['-version']) {
     });
   });
 }
+function adbArgs(serial, args) {
+  return serial ? ['-s', serial, ...args] : args;
+}
+function execAdb(serial, args, timeout = 5000) {
+  return new Promise((resolve) => {
+    execFile(ADB, adbArgs(serial, args), { env: CHILD_ENV, timeout, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
+      resolve({ ok: !err, stdout: String(stdout || ''), stderr: String(stderr || ''), error: err && err.message });
+    });
+  });
+}
+async function listAndroidDevices() {
+  if (!fs.existsSync(ADB) && ADB === 'adb') return [];
+  const r = await execAdb(null, ['devices', '-l'], 5000);
+  if (!r.ok) return [];
+  return r.stdout.split('\n').slice(1).map((line) => line.trim()).filter(Boolean)
+    .map((line) => {
+      const [serial, state] = line.split(/\s+/);
+      const model = (line.match(/\bmodel:([^\s]+)/) || [])[1] || '';
+      const product = (line.match(/\bproduct:([^\s]+)/) || [])[1] || '';
+      return { serial, state, model, product };
+    })
+    .filter((d) => d.state === 'device');
+}
+async function androidScreenSize(serial) {
+  const r = await execAdb(serial, ['shell', 'wm', 'size'], 5000);
+  const m = r.stdout.match(/Physical size:\s*(\d+)x(\d+)/) || r.stdout.match(/Override size:\s*(\d+)x(\d+)/);
+  return m ? { w: parseInt(m[1], 10), h: parseInt(m[2], 10) } : { w: 1080, h: 1920 };
+}
+async function androidTouchDevice(serial) {
+  const r = await execAdb(serial, ['shell', 'getevent', '-lp'], 7000);
+  if (!r.ok) return null;
+  const blocks = r.stdout.split(/\n(?=add device )/);
+  for (const block of blocks) {
+    if (!block.includes('ABS_MT_POSITION_X') || !block.includes('ABS_MT_POSITION_Y')) continue;
+    const device = (block.match(/add device \d+:\s+([^\n]+)/) || [])[1]?.trim();
+    const xMax = parseInt((block.match(/ABS_MT_POSITION_X\s+:\s+value\s+\d+,\s+min\s+\d+,\s+max\s+(\d+)/) || [])[1] || '0', 10);
+    const yMax = parseInt((block.match(/ABS_MT_POSITION_Y\s+:\s+value\s+\d+,\s+min\s+\d+,\s+max\s+(\d+)/) || [])[1] || '0', 10);
+    if (device && xMax && yMax) return { device, xMax, yMax };
+  }
+  return null;
+}
 async function diagnostics() {
   const hook = loadUiohook();
-  const [ffmpeg, ffprobe, osascript, displays, windows] = await Promise.all([
+  const [ffmpeg, ffprobe, adb, scrcpy, osascript, displays, windows, androidDevices] = await Promise.all([
     binStatus('ffmpeg', FFMPEG),
     binStatus('ffprobe', FFPROBE),
+    binStatus('adb', ADB, ['version']),
+    binStatus('scrcpy', SCRCPY, ['--version']),
     binStatus('osascript', OSASCRIPT, ['-e', '1']),
     listDisplays().catch((e) => ({ error: e.message })),
     listRecordableWindows().catch((e) => ({ error: e.message })),
+    listAndroidDevices().catch(() => []),
   ]);
   const screencapture = {
     name: 'screencapture',
@@ -141,7 +187,7 @@ async function diagnostics() {
     arch: process.arch,
     node: process.version,
     debugLog: DEBUG_LOG,
-    bins: { ffmpeg, ffprobe, screencapture, osascript },
+    bins: { ffmpeg, ffprobe, adb, scrcpy, screencapture, osascript },
     uiohook: {
       ok: hook !== false,
       running: rec.hookRunning,
@@ -154,6 +200,7 @@ async function diagnostics() {
     sources: {
       displays: Array.isArray(displays) ? displays.length : 0,
       windows: Array.isArray(windows) ? windows.length : 0,
+      android: Array.isArray(androidDevices) ? androidDevices.length : 0,
       displaysError: displays && displays.error,
       windowsError: windows && windows.error,
     },
@@ -172,13 +219,13 @@ function loadUiohook() {
 // ---------- recording state ----------
 const rec = {
   active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-  proc: null, clicks: [], bounds: null, boundsTimer: null,
+  proc: null, touchProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
   finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '',
 };
 
 function resetRec() {
   Object.assign(rec, { active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-    proc: null, clicks: [], bounds: null, finished: false, error: null, capStderr: '', ffmpegError: '' });
+    proc: null, touchProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, finished: false, error: null, capStderr: '', ffmpegError: '' });
 }
 
 async function startRecording(recordingsDir, opts) {
@@ -188,6 +235,7 @@ async function startRecording(recordingsDir, opts) {
   fs.mkdirSync(recordingsDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const base = path.join(recordingsDir, `recording-${stamp}`);
+  if (opts && opts.androidSerial) return startAndroidRecording(base, opts.androidSerial);
 
   // เลือกเป้าหมาย: ทั้งจอ (screenIndex) | หน้าต่าง (windowId) | iPhone (ค่าเริ่มต้น)
   let capArgs;
@@ -270,6 +318,72 @@ async function startRecording(recordingsDir, opts) {
   return { base: path.basename(base) };
 }
 
+async function startAndroidRecording(base, serial) {
+  const devices = await listAndroidDevices();
+  if (!devices.some((d) => d.serial === serial)) throw new Error('ไม่พบ Android device — เปิด USB debugging แล้วเชื่อมต่ออีกครั้ง');
+  const touch = await androidTouchDevice(serial);
+  const size = await androidScreenSize(serial);
+  const remote = `/sdcard/ZoomCut-${path.basename(base)}.mp4`;
+  rec.mode = 'android';
+  rec.base = base;
+  rec.androidSerial = serial;
+  rec.remotePath = remote;
+  rec.bounds = { x: 0, y: 0, w: touch?.xMax || size.w, h: touch?.yMax || size.h };
+  const cap = spawn(ADB, adbArgs(serial, ['shell', 'screenrecord', remote]), { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+  rec.proc = cap;
+  rec.active = true;
+  rec.startedAt = Date.now();
+  cap.stderr.on('data', (buf) => { rec.capStderr += String(buf); });
+  cap.on('exit', () => {
+    if (rec.active) {
+      rec.error = 'Android screenrecord หยุดก่อนเวลา — ตรวจสาย USB/สิทธิ์ USB debugging';
+      rec.active = false;
+    }
+  });
+  startAndroidTouchTracking(serial, touch);
+  dbg(`android screenrecord serial=${serial} remote=${remote} touch=${touch ? touch.device : 'auto'}`);
+  return { base: path.basename(base) };
+}
+
+function startAndroidTouchTracking(serial, touch) {
+  const args = touch?.device ? ['shell', 'getevent', '-lt', touch.device] : ['shell', 'getevent', '-lt'];
+  const proc = spawn(ADB, adbArgs(serial, args), { stdio: ['ignore', 'pipe', 'pipe'], env: CHILD_ENV });
+  rec.touchProc = proc;
+  let buf = '';
+  let curX = null, curY = null, touching = false, began = false;
+  const xMax = touch?.xMax || rec.bounds.w || 1;
+  const yMax = touch?.yMax || rec.bounds.h || 1;
+  const parse = (line) => {
+    const m = line.match(/:\s+([0-9a-fA-F]{4})\s+([0-9a-fA-F]{4})\s+([0-9a-fA-F]+)/);
+    if (!m) return;
+    const type = parseInt(m[1], 16), code = parseInt(m[2], 16);
+    let val = parseInt(m[3], 16);
+    if (val > 0x7fffffff) val -= 0x100000000;
+    if (type === 0x0003 && code === 0x0035) curX = val;
+    if (type === 0x0003 && code === 0x0036) curY = val;
+    if (type === 0x0001 && code === 0x014a) {
+      if (val === 1 && !touching) began = true;
+      touching = val === 1;
+    }
+    if (type === 0x0003 && code === 0x0039) {
+      if (val >= 0 && !touching) began = true;
+      touching = val >= 0;
+    }
+    if (type === 0x0000 && code === 0x0000 && began && touching && curX !== null && curY !== null) {
+      rec.clicks.push({ wall: Date.now(), x: Math.max(0, Math.min(1, curX / xMax)), y: Math.max(0, Math.min(1, curY / yMax)) });
+      began = false;
+    }
+  };
+  proc.stdout.on('data', (chunk) => {
+    buf += String(chunk);
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    lines.forEach(parse);
+  });
+  proc.stderr.on('data', (chunk) => dbg(`android getevent stderr: ${String(chunk).trim()}`));
+  proc.on('error', (e) => dbg(`android getevent failed: ${e.message}`));
+}
+
 function startInputHook() {
   const hook = loadUiohook();
   if (!hook || rec.hookRunning) {
@@ -309,6 +423,7 @@ async function stopRecording() {
   rec.processing = true; // หยุดอัดแล้ว แต่ยังแปลงไฟล์อยู่ (frontend รอต่อ ไม่หยุด poll)
   clearInterval(rec.boundsTimer);
   stopInputHook();
+  if (rec.mode === 'android') return stopAndroidRecording();
   const stopWall = Date.now();
   const base = rec.base;
   const outMov = base + '.mov';
@@ -358,6 +473,43 @@ async function stopRecording() {
   rec.clicks = clicks;
 }
 
+async function stopAndroidRecording() {
+  const stopWall = Date.now();
+  const base = rec.base;
+  const outMp4 = base + '.mp4';
+  if (rec.touchProc && rec.touchProc.exitCode === null) {
+    try { rec.touchProc.kill('SIGTERM'); } catch {}
+  }
+  if (rec.proc && rec.proc.exitCode === null) {
+    rec.proc.kill('SIGINT');
+    await new Promise((r) => {
+      const t = setTimeout(() => { try { rec.proc.kill('SIGKILL'); } catch {} r(); }, 7000);
+      rec.proc.on('exit', () => { clearTimeout(t); r(); });
+    });
+  }
+  const pull = await execAdb(rec.androidSerial, ['pull', rec.remotePath, outMp4], 30000);
+  await execAdb(rec.androidSerial, ['shell', 'rm', '-f', rec.remotePath], 5000);
+  if (!pull.ok || !fs.existsSync(outMp4) || fs.statSync(outMp4).size === 0) {
+    rec.error = 'ดึงวิดีโอจาก Android ไม่สำเร็จ — ตรวจว่า USB debugging ยังเชื่อมต่ออยู่'
+      + (pull.stderr || pull.error ? `\n\nรายละเอียด: ${pull.stderr || pull.error}` : '');
+    rec.processing = false;
+    return;
+  }
+  const dur = await ffprobeDuration(outMp4);
+  let clicks = [];
+  if (dur) {
+    const frame0 = stopWall - dur * 1000;
+    for (const c of rec.clicks) {
+      const t = (c.wall - frame0) / 1000;
+      if (t >= -0.25 && t <= dur + 0.25) clicks.push({ t: Math.max(0, +t.toFixed(3)), x: +c.x.toFixed(4), y: +c.y.toFixed(4) });
+    }
+  }
+  fs.writeFileSync(base + '.clicks.json', JSON.stringify({ version: 1, source: 'android-adb-getevent', clicks }, null, 2));
+  rec.finished = true;
+  rec.processing = false;
+  rec.clicks = clicks;
+}
+
 function recordState() {
   return {
     running: rec.active && rec.startedAt !== null,
@@ -386,8 +538,8 @@ function startServer({ webRoot, recordingsDir, port = 0 } = {}) {
 
     try {
       if (url.pathname === '/api/windows') {
-        const [windows, displays] = await Promise.all([listRecordableWindows(), listDisplays()]);
-        return send({ windows, displays });
+        const [windows, displays, androidDevices] = await Promise.all([listRecordableWindows(), listDisplays(), listAndroidDevices()]);
+        return send({ windows, displays, androidDevices });
       }
       if (url.pathname === '/api/record/state') return send(recordState());
       if (url.pathname === '/api/diagnostics') return send(await diagnostics());

@@ -31,6 +31,18 @@
 - ลอง crop ซ้าย/ขวา/บน/ล่าง แล้วคลิกเพิ่มบน preview
 - จุดซูมใหม่ต้องยังตรงกับตำแหน่งที่คลิก ไม่ผูกผิดกับ crop
 
+## 3.1 Android USB Recording
+
+- ติดตั้ง Android Platform Tools ให้มี `adb` ในเครื่อง
+- เปิด Developer Options และ USB debugging บน Android
+- ต่อ Android ผ่าน USB แล้วกด Trust/Allow debugging บนเครื่อง
+- เปิด `ตรวจระบบ` ต้องเห็น `adb` พร้อมใช้งาน และ Android device อย่างน้อย 1 เครื่อง
+- กด `อัดหน้าจอ` แล้วเลือก `Android ผ่าน USB`
+- อัด 5-10 วินาทีและแตะหน้าจอ Android อย่างน้อย 3 จุด
+- กดหยุดอัดใน ZoomCut
+- หลังโหลดวิดีโอ ต้องเห็นจำนวน zoom/click จาก `.clicks.json`
+- เปิด `Debug` แล้วเล่นผ่านจุดแตะ เส้น crosshair ต้องตรงกับจุดที่แตะบน Android
+
 ## 4. Zoom Range
 
 - เลือก zoom style: `Subtle`, `Focus`, `Fast`, `Cinematic`, `Tap only`

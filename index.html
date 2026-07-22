@@ -1104,6 +1104,8 @@ const I18N = {
     segDelete: '🗑 ตัดท่อนนี้ออก', zoomMarker: '🔍 Zoom marker', zoomIn: 'เข้า', zoomOut: 'ออก',
     growLeft: '← ขยาย', growRight: 'ขยาย →', delete: '🗑 ลบ',
     pickerTitle: 'เลือกสิ่งที่จะอัด', pickerSub: 'เหมือนแชร์จอใน meeting — เลือกหน้าต่างที่ต้องการ แล้วทุกคลิกจะกลายเป็นจุดซูมอัตโนมัติ',
+    androidRecord: 'Android ผ่าน USB',
+    androidRecordSub: d => `อัดด้วย adb screenrecord + จับ touch จาก getevent • ${d.model || d.serial}`,
     cancel: 'ยกเลิก', diagTitle: 'ตรวจระบบ ZoomCut', exportTitle: 'กำลัง Export วิดีโอ…',
     exportSub: 'กำลังเรนเดอร์แบบเรียลไทม์ — อย่าปิดหรือสลับไปแท็บอื่น (ต้องให้แท็บนี้แสดงอยู่)',
     micDefault: 'ไมค์เริ่มต้น', micLoading: 'กำลังโหลดไมค์...', micNoDevices: 'ไม่พบไมค์',
@@ -1157,6 +1159,8 @@ const I18N = {
     segDelete: '🗑 Delete segment', zoomMarker: '🔍 Zoom marker', zoomIn: 'In', zoomOut: 'Out',
     growLeft: '← Extend', growRight: 'Extend →', delete: '🗑 Delete',
     pickerTitle: 'Choose what to record', pickerSub: 'Pick a screen or window. Every click becomes an automatic zoom point.',
+    androidRecord: 'Android over USB',
+    androidRecordSub: d => `Record with adb screenrecord + getevent touch tracking • ${d.model || d.serial}`,
     cancel: 'Cancel', diagTitle: 'ZoomCut diagnostics', exportTitle: 'Exporting video…',
     exportSub: 'Rendering in real time. Keep this window visible until export finishes.',
     micDefault: 'Default microphone', micLoading: 'Loading mics...', micNoDevices: 'No microphones found',
@@ -3885,11 +3889,13 @@ async function openDiagnostics() {
     diagItem(true, 'Runtime', `${data.platform}/${data.arch} • Node ${data.node}`),
     diagItem(bins.ffmpeg && bins.ffmpeg.ok, 'ffmpeg', bins.ffmpeg && `${bins.ffmpeg.path} — ${bins.ffmpeg.detail}`),
     diagItem(bins.ffprobe && bins.ffprobe.ok, 'ffprobe', bins.ffprobe && `${bins.ffprobe.path} — ${bins.ffprobe.detail}`),
+    diagItem(bins.adb && bins.adb.ok, 'adb', bins.adb && `${bins.adb.path} — ${bins.adb.detail || (state.lang === 'th' ? 'พร้อมใช้ Android USB recording' : 'Ready for Android USB recording')}`),
+    diagItem(bins.scrcpy && bins.scrcpy.ok, 'scrcpy', bins.scrcpy && `${bins.scrcpy.path} — ${bins.scrcpy.detail || (state.lang === 'th' ? 'พร้อมใช้ Android mirroring' : 'Ready for Android mirroring')}`),
     diagItem(bins.screencapture && bins.screencapture.ok, 'Screen Recording backend', bins.screencapture && `${bins.screencapture.path} — ${bins.screencapture.detail || (state.lang === 'th' ? 'พร้อมเรียก screencapture' : 'Ready to call screencapture')}`),
     diagItem(data.uiohook && data.uiohook.ok, 'Click hook', data.uiohook && data.uiohook.detail),
     diagItem((data.sources && data.sources.displays > 0), 'Display/window list', state.lang === 'th'
-      ? `${data.sources?.displays || 0} จอ • ${data.sources?.windows || 0} หน้าต่าง${data.sources?.windowsError ? ' — ' + data.sources.windowsError : ''}`
-      : `${data.sources?.displays || 0} displays • ${data.sources?.windows || 0} windows${data.sources?.windowsError ? ' — ' + data.sources.windowsError : ''}`),
+      ? `${data.sources?.displays || 0} จอ • ${data.sources?.windows || 0} หน้าต่าง • Android ${data.sources?.android || 0} เครื่อง${data.sources?.windowsError ? ' — ' + data.sources.windowsError : ''}`
+      : `${data.sources?.displays || 0} displays • ${data.sources?.windows || 0} windows • ${data.sources?.android || 0} Android devices${data.sources?.windowsError ? ' — ' + data.sources.windowsError : ''}`),
     diagItem(true, 'Debug log', data.debugLog || '/tmp/zoomcut-debug.log'),
   ].join('');
   $('diagTip').textContent = state.lang === 'th'
@@ -3954,6 +3960,9 @@ async function openSourcePicker() {
   addItem('📱', 'iPhone', state.lang === 'th' ? 'อัดหน้าจอ iPhone ผ่าน iPhone Mirroring — เปิดแอปให้อัตโนมัติ' : 'Record iPhone via iPhone Mirroring. ZoomCut will open it if needed.', {});
 
   if (ok) {
+    for (const d of data.androidDevices || []) {
+      addItem('🤖', tr('androidRecord'), tr('androidRecordSub', d), { androidSerial: d.serial });
+    }
     // ทั้งหน้าจอ (แต่ละจอ)
     for (const d of data.displays || []) {
       const label = state.lang === 'th'
