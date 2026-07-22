@@ -183,6 +183,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 ---
 
 ## 9. TODO / ทิศทางต่อ
+- [ ] **Recording blocker:** หลังเริ่มอัด หน้า editor ไม่มีปุ่ม `Stop Recording` ที่มองเห็นและกดได้ ต้องเพิ่มสถานะ recording ที่ชัดเจนพร้อม elapsed time และปุ่มหยุดซึ่งเข้าถึงได้ตลอดการอัด
 - [ ] Windows EXE (backend อัดด้วย ffmpeg แทน screencapture ซึ่งเป็น macOS-only)
 - [ ] Notarize (ต้องมี Apple Developer $99/ปี) → เปิดได้เนียนไม่มีเตือน
 - [ ] ไอคอนแอป (ตอนนี้ใช้ default Electron)
