@@ -86,6 +86,12 @@ function runJxa(script) {
 }
 const jxaListWindows = () => runJxa(JXA_WINDOWS);
 
+function buildScreencaptureArgs({ screenIndex, windowId }, outputPath) {
+  if (screenIndex) return ['-v', '-C', '-D', String(screenIndex), outputPath];
+  // CGWindow bounds exclude the shadow. Keep the captured frame identical so normalized clicks map exactly.
+  return ['-v', '-C', '-o', '-l', String(windowId), outputPath];
+}
+
 async function listDisplays() {
   const raw = await runJxa(JXA_DISPLAYS);
   // จัดลำดับ: จอหลักก่อน แล้ว index = ตำแหน่ง+1 (ตรงกับ screencapture -D)
@@ -285,6 +291,7 @@ async function startRecording(recordingsDir, opts) {
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const base = path.join(recordingsDir, `recording-${stamp}`);
   if (opts && opts.androidSerial) return startAndroidRecording(base, opts.androidSerial);
+  const outMov = base + '.mov';
 
   // เลือกเป้าหมาย: ทั้งจอ (screenIndex) | หน้าต่าง (windowId) | iPhone (ค่าเริ่มต้น)
   let capArgs;
@@ -294,7 +301,7 @@ async function startRecording(recordingsDir, opts) {
     if (!d) throw new Error(`ไม่พบจอ #${opts.screenIndex}`);
     rec.mode = 'display';
     rec.bounds = { x: d.x, y: d.y, w: d.w, h: d.h };
-    capArgs = ['-v', '-C', '-D', String(d.index)];
+    capArgs = buildScreencaptureArgs({ screenIndex: d.index }, outMov);
   } else {
     let wid = opts && opts.windowId;
     if (wid) {
@@ -314,14 +321,13 @@ async function startRecording(recordingsDir, opts) {
     const winsNow = await jxaListWindows();
     rec.ownerPid = (winsNow.find((w) => w.id === wid) || {}).pid || null;
     await focusWindowBeforeRecording(rec.ownerPid);
-    capArgs = ['-v', '-C', '-l', String(wid)];
+    capArgs = buildScreencaptureArgs({ windowId: wid }, outMov);
   }
 
-  const outMov = base + '.mov';
   try { fs.unlinkSync(outMov); } catch {}
 
-  const cap = spawn(SCREENCAPTURE, [...capArgs, outMov], { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
-  dbg(`screencapture spawn ${[...capArgs, outMov].join(' ')}`);
+  const cap = spawn(SCREENCAPTURE, capArgs, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+  dbg(`screencapture spawn ${capArgs.join(' ')}`);
   rec.proc = cap;
   rec.base = base;
   rec.active = true;
@@ -818,7 +824,7 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
   });
 }
 
-module.exports = { startServer, listRecordableWindows, startRecording, stopRecording, recordState };
+module.exports = { startServer, listRecordableWindows, startRecording, stopRecording, recordState, buildScreencaptureArgs };
 
 // รันเดี่ยวเพื่อทดสอบ: node electron/server.js
 if (require.main === module) {

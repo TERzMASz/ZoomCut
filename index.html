@@ -823,6 +823,14 @@
   <button class="btn primary" id="exportBtn" disabled>⬇️ Export วิดีโอ</button>
 </header>
 
+<div class="recording-hud" id="recordingHud" hidden role="status" aria-live="polite">
+  <span class="recording-hud-dot" aria-hidden="true"></span>
+  <strong id="recordingHudStatus">กำลังอัดหน้าจอ</strong>
+  <span class="recording-hud-time" id="recordingHudTime">00:00</span>
+  <span class="recording-hud-clicks" id="recordingHudClicks">0 clicks</span>
+  <button class="recording-stop" id="recordingStopBtn" type="button"><i data-lucide="square"></i><span>หยุดอัด</span></button>
+</div>
+
 <main id="editorShell">
   <nav class="editor-rail" id="editorRail" aria-label="Editor tools">
     <button class="rail-tool active" data-shell-panel="media" title="Media"><i data-lucide="clapperboard"></i><span data-rail-label="media">สื่อ</span></button>
@@ -1009,6 +1017,13 @@
         หรือกด "เพิ่มสื่อ" / "อัดหน้าจอ"<br>
         <span style="font-size:12px">หลังจากมีวิดีโอหลักแล้ว ลากวิดีโอเพิ่มเพื่อวางเป็น overlay clip บน timeline<br>
         ถ้ามี .clicks.json ให้ลากมาพร้อมวิดีโอหลักเพื่อสร้าง zoom อัตโนมัติ</span></div>
+      </div>
+      <div class="preview-transport" id="previewTransport" aria-label="Preview playback controls" hidden>
+        <time id="previewCurrent">00:00.00</time>
+        <button class="preview-step" id="previewStepBack" type="button" disabled title="ย้อนหนึ่งเฟรม" aria-label="ย้อนหนึ่งเฟรม"><i data-lucide="step-back"></i></button>
+        <button class="preview-play" id="previewPlay" type="button" disabled title="เล่น" aria-label="เล่น"><i class="preview-play-icon" data-lucide="play"></i><i class="preview-pause-icon" data-lucide="pause"></i></button>
+        <button class="preview-step" id="previewStepForward" type="button" disabled title="ไปข้างหน้าหนึ่งเฟรม" aria-label="ไปข้างหน้าหนึ่งเฟรม"><i data-lucide="step-forward"></i></button>
+        <time id="previewDuration">00:00.00</time>
       </div>
     </div>
 
@@ -1631,6 +1646,11 @@ function applyLanguage() {
   updateSegUI();
   updateVoiceUI();
   updateCameraUI();
+  if (!$('recordingHud').hidden) setRecordingHud($('recordingHud').dataset.mode, {
+    elapsed: Number($('recordingHud').dataset.elapsed) || 0,
+    clicks: Number($('recordingHud').dataset.clicks) || 0,
+  });
+  updatePreviewTransport();
   queueMicrotask(() => globalThis.refreshEditorShellIcons?.());
 }
 
@@ -2059,6 +2079,8 @@ function enterLoadedUI() {
   $('imgExportSec').style.display = isVideo ? 'none' : '';
   document.querySelector('.timeline-area').style.display = isVideo ? '' : 'none';
   $('editorShell').classList.toggle('timeline-hidden', !isVideo);
+  $('previewTransport').hidden = !isVideo;
+  updatePreviewTransport();
   updateTimelineScale();
   queueMicrotask(() => globalThis.refreshEditorShellIcons?.());
 }
@@ -2883,6 +2905,31 @@ canvas.addEventListener('click', e => {
 
 // ---------- Playback ----------
 const playBtn = $('playBtn');
+function fmtPreviewTime(seconds) {
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const minutes = Math.floor(safe / 60);
+  const whole = Math.floor(safe % 60);
+  const centis = Math.floor((safe - Math.floor(safe)) * 100);
+  return `${String(minutes).padStart(2, '0')}:${String(whole).padStart(2, '0')}.${String(centis).padStart(2, '0')}`;
+}
+function updatePreviewTransport() {
+  const enabled = state.loaded && state.mode === 'video' && Number.isFinite(video.duration);
+  $('previewCurrent').textContent = fmtPreviewTime(enabled ? video.currentTime : 0);
+  $('previewDuration').textContent = fmtPreviewTime(enabled ? video.duration : 0);
+  for (const id of ['previewStepBack', 'previewPlay', 'previewStepForward']) $(id).disabled = !enabled;
+  $('previewPlay').classList.toggle('is-playing', enabled && !video.paused);
+  const playLabel = video.paused
+    ? (state.lang === 'th' ? 'เล่น' : 'Play')
+    : (state.lang === 'th' ? 'หยุดชั่วคราว' : 'Pause');
+  $('previewPlay').title = playLabel;
+  $('previewPlay').setAttribute('aria-label', playLabel);
+  const backLabel = state.lang === 'th' ? 'ย้อนหนึ่งเฟรม' : 'Previous frame';
+  const forwardLabel = state.lang === 'th' ? 'ไปข้างหน้าหนึ่งเฟรม' : 'Next frame';
+  $('previewStepBack').title = backLabel;
+  $('previewStepBack').setAttribute('aria-label', backLabel);
+  $('previewStepForward').title = forwardLabel;
+  $('previewStepForward').setAttribute('aria-label', forwardLabel);
+}
 playBtn.onclick = () => {
   if (video.paused) {
     const last = state.segments[state.segments.length - 1];
@@ -2892,13 +2939,17 @@ playBtn.onclick = () => {
     video.play();
   } else video.pause();
 };
+$('previewPlay').onclick = () => playBtn.click();
+$('previewStepBack').onclick = () => seekBy(-1 / 30);
+$('previewStepForward').onclick = () => seekBy(1 / 30);
 video.addEventListener('play', () => {
   playBtn.textContent = tr('pause');
+  updatePreviewTransport();
   // ปิดโหมด "ดูขอบ" อัตโนมัติเมื่อเริ่มเล่น (ไม่งั้นจะเห็นภาพ guide นิ่ง เหมือนซูมไม่ทำงาน)
   if (showCropGuide) { showCropGuide = false; $('cropToggle').classList.remove('active'); }
 });
-video.addEventListener('pause', () => { playBtn.textContent = tr('play'); stopVoicePreview(); });
-video.addEventListener('seeked', () => { requestRender(); updatePlayheadUI(); syncVoicePreview(true); });
+video.addEventListener('pause', () => { playBtn.textContent = tr('play'); updatePreviewTransport(); stopVoicePreview(); });
+video.addEventListener('seeked', () => { requestRender(); updatePlayheadUI(); updatePreviewTransport(); syncVoicePreview(true); });
 video.addEventListener('ended', () => video.pause());
 
 function isTypingTarget(el) {
@@ -3364,8 +3415,9 @@ $('voiceTrackGroup').addEventListener('pointermove', e => {
   updateVoiceUI();
 });
 $('voiceTrackGroup').addEventListener('pointerup', e => {
+  if (!voiceDrag) return;
   const lane = laneFromPoint('voiceTrackGroup', 'voice-track', e.clientX, e.clientY);
-  if (voiceDrag && lane !== null && !voiceDrag.edge) voiceDrag.clip.lane = lane;
+  if (lane !== null && !voiceDrag.edge) voiceDrag.clip.lane = lane;
   voiceDrag = null;
   updateVoiceUI();
 });
@@ -3504,8 +3556,9 @@ $('cameraTrackGroup').addEventListener('pointermove', e => {
   updateCameraUI(); requestRender();
 });
 $('cameraTrackGroup').addEventListener('pointerup', e => {
+  if (!camDrag) return;
   const lane = laneFromPoint('cameraTrackGroup', 'camera-track', e.clientX, e.clientY);
-  if (camDrag && lane !== null && !camDrag.edge) camDrag.clip.lane = lane;
+  if (lane !== null && !camDrag.edge) camDrag.clip.lane = lane;
   camDrag = null;
   updateCameraUI(); requestRender();
 });
@@ -3560,6 +3613,7 @@ function updatePlayheadUI() {
     || (state.segments[0] && (state.segments[0].start > 0.05 || state.segments[0].end < video.duration - 0.05));
   $('timeLabel').textContent = `${fmtTime(video.currentTime)} / ${fmtTime(video.duration)}`
     + (edited ? ` • ${tr('output')} ${fmtTime(outLen)}` : '');
+  updatePreviewTransport();
 }
 
 // ---------- Segments (ตัดหลายท่อน + speed แยกท่อน) ----------
@@ -3992,8 +4046,9 @@ $('videoTrackGroup').addEventListener('pointermove', e => {
   updateSegUI(); requestRender();
 });
 $('videoTrackGroup').addEventListener('pointerup', e => {
+  if (!segDrag) return;
   const lane = laneFromPoint('videoTrackGroup', 'seg-track', e.clientX, e.clientY);
-  if (segDrag && segDrag.kind === 'clip' && lane !== null && !segDrag.edge) segDrag.s.lane = lane;
+  if (segDrag.kind === 'clip' && lane !== null && !segDrag.edge) segDrag.s.lane = lane;
   segDrag = null;
   updateSegUI(); requestRender();
 });
@@ -4239,6 +4294,8 @@ $('newBtn').onclick = () => {
   $('editorShell').classList.remove('timeline-hidden');
   $('zoomCount').textContent = '';
   $('timeLabel').textContent = '0:00.0 / 0:00.0';
+  $('previewTransport').hidden = true;
+  updatePreviewTransport();
   playhead.style.left = '0';
   $('videoTrackGroup').innerHTML = '';
   $('voiceTrackGroup').innerHTML = '';
@@ -4568,6 +4625,39 @@ $('exportBtn').onclick = async () => {
 const recBtn = $('recBtn');
 let recState = { recording: false, poller: null };
 
+function setRecordingHud(mode, { elapsed = 0, clicks = 0 } = {}) {
+  const hud = $('recordingHud');
+  if (!mode) {
+    hud.hidden = true;
+    hud.dataset.mode = '';
+    const shellRecordLabel = $('shellStartRecord')?.querySelector('span');
+    if (shellRecordLabel) shellRecordLabel.textContent = state.lang === 'th' ? 'เลือกสิ่งที่จะอัด' : 'Choose recording source';
+    return;
+  }
+  const th = state.lang === 'th';
+  hud.hidden = false;
+  hud.dataset.mode = mode;
+  hud.dataset.elapsed = String(elapsed);
+  hud.dataset.clicks = String(clicks);
+  const status = mode === 'running'
+    ? (th ? 'กำลังอัดหน้าจอ' : 'Recording screen')
+    : mode === 'processing'
+      ? (th ? 'กำลังบันทึกไฟล์' : 'Finishing recording')
+      : mode === 'stopping'
+        ? (th ? 'กำลังหยุดอัด' : 'Stopping recording')
+        : (th ? 'กำลังเริ่มอัด' : 'Starting recording');
+  $('recordingHudStatus').textContent = status;
+  $('recordingHudTime').textContent = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:${String(Math.floor(elapsed % 60)).padStart(2, '0')}`;
+  $('recordingHudClicks').textContent = `${clicks} ${th ? 'คลิก' : 'clicks'}`;
+  $('recordingStopBtn').disabled = mode !== 'running';
+  $('recordingStopBtn').querySelector('span').textContent = th ? 'หยุดอัด' : 'Stop';
+  const shellRecordLabel = $('shellStartRecord')?.querySelector('span');
+  if (shellRecordLabel) shellRecordLabel.textContent = mode === 'running' ? (th ? 'หยุดอัด' : 'Stop recording') : status;
+}
+$('recordingStopBtn').onclick = () => {
+  if (recState.recording) recBtn.click();
+};
+
 $('themeBtn').onclick = () => {
   state.theme = state.theme === 'dark' ? 'light' : 'dark';
   localStorage.setItem('zoomcut-theme', state.theme);
@@ -4707,6 +4797,10 @@ recBtn.onclick = async () => {
   if (recState.recording) {
     recBtn.textContent = tr('recStopping');
     $('quickRecord').classList.add('recording');
+    setRecordingHud('stopping', {
+      elapsed: Number($('recordingHud').dataset.elapsed) || 0,
+      clicks: Number($('recordingHud').dataset.clicks) || 0,
+    });
     await api('/api/record/stop', { method: 'POST' });
     return;
   }
@@ -4842,6 +4936,7 @@ async function startRecording(target) {
   recBtn.classList.add('recording');
   recBtn.textContent = tr('recStarting');
   $('quickRecord').classList.add('recording');
+  setRecordingHud('starting');
   if (recState.poller) clearInterval(recState.poller);
   recState.poller = setInterval(pollRecState, 1000);
   try {
@@ -4861,6 +4956,7 @@ async function startRecording(target) {
     recBtn.classList.remove('recording');
     $('quickRecord').classList.remove('recording');
     recBtn.textContent = tr('record');
+    setRecordingHud(null);
     if (desktop) desktop.system.recordingIndicator(false).catch(() => {});
     await api('/api/record/stop', { method: 'POST' }, 5000).catch(() => {});
     showActionableError((state.lang === 'th'
@@ -4880,6 +4976,7 @@ async function pollRecState() {
     recBtn.textContent = `${state.lang === 'th' ? '⏹ หยุดอัด' : '⏹ Stop'} ${mm}:${ss} • 👆${data.clicks}`;
     recBtn.title = 'คีย์ลัดหยุดอัดทั้งจอ: ⌃⌘S (Control-Command-S)';
     $('quickRecord').classList.add('recording');
+    setRecordingHud('running', { elapsed: secs, clicks: data.clicks || 0 });
     return;
   }
   // ยังไม่ถึงสถานะจบ (finished/error) → ต้องรอต่อ ห้ามหยุด poll
@@ -4887,6 +4984,10 @@ async function pollRecState() {
   if (!data.finished && !data.error) {
     recBtn.classList.remove('recording');
     recBtn.textContent = data.processing ? tr('recProcessing') : tr('recStarting');
+    setRecordingHud(data.processing ? 'processing' : 'starting', {
+      elapsed: Number($('recordingHud').dataset.elapsed) || 0,
+      clicks: data.clicks || Number($('recordingHud').dataset.clicks) || 0,
+    });
     return; // poll ต่อไป
   }
   // จบจริง (finished หรือ error)
@@ -4895,6 +4996,7 @@ async function pollRecState() {
   recBtn.classList.remove('recording');
   $('quickRecord').classList.remove('recording');
   recBtn.textContent = tr('record');
+  setRecordingHud(null);
   if (desktop) desktop.system.recordingIndicator(false).catch(() => {});
   if (data.error) {
     showActionableError((state.lang === 'th' ? 'อัดไม่สำเร็จ:\n' : 'Recording failed:\n') + data.error);

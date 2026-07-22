@@ -23,11 +23,13 @@
 - หน้าเริ่มต้นใน timeline ต้องมี 3 ปุ่มชัดเจน: `อัดหน้าจอ`, `เพิ่มสื่อ`, `พากย์เสียง`
 - ก่อนมีวิดีโอ ปุ่ม `พากย์เสียง` ใน quick actions ต้อง disabled
 - กด `อัดหน้าจอ`
+- หลังเริ่มอัด ต้องเห็น recording HUD อยู่เหนือ workspace พร้อม timer, click count และปุ่ม `หยุดอัด` ที่กดได้ตลอด
 - ระหว่างอัด menu bar ต้องแสดง `● REC mm:ss` และเมนู `Stop Recording` ต้องหยุดได้
 - เลือกทั้งจอหรือหน้าต่างสั้น ๆ
 - อัดประมาณ 10 วินาที และคลิกอย่างน้อย 3 จุดที่ห่างกัน
 - หยุดด้วยปุ่มในแอป และทดสอบคีย์ลัด `Control-Command-S` อีกหนึ่งรอบ
 - หลังจบต้องโหลดวิดีโอกลับเข้า editor พร้อมจำนวนจุดซูม
+- สำหรับการอัดหน้าต่าง เฟรมต้องไม่มี shadow margin; บน Retina pixel size ต้องตรงกับ window bounds คูณ backing scale
 
 ## 3. Coordinate / Zoom
 
@@ -63,6 +65,8 @@
 
 ## 5. Timeline Trim
 
+- transport ใต้ preview ต้องแสดง current time, previous frame, Play/Pause, next frame และ total duration โดย sync กับ playhead
+- คลิก lock, mute, solo และ visibility ของทุก Video/Voice/Camera lane; ปุ่มต้องเปลี่ยนสถานะและส่งผลกับ preview/playback
 - กด `+ Video lane`, `+ Voice lane`, `+ Camera lane` แล้วต้องเห็น lane ใหม่แยกตามชนิด media
 - เปิด/ลากวิดีโอไฟล์แรกเพื่อเป็น base แล้วเพิ่มวิดีโอไฟล์ที่สอง ต้องเห็นเป็น overlay clip สีเหลืองใน video lane
 - เล่น preview ช่วง overlay clip แล้ววิดีโอที่สองต้องวาดทับบนพื้นที่ content

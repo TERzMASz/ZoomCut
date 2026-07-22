@@ -27,6 +27,10 @@ test('editor shell assets and primary work areas are packaged by index', () => {
     'timeline',
     'sidebarSplitter',
     'timelineSplitter',
+    'recordingHud',
+    'recordingStopBtn',
+    'previewTransport',
+    'previewPlay',
   ]) {
     assert.match(html, new RegExp(`\\bid=["']${id}["']`), `missing #${id}`);
   }

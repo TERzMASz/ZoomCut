@@ -166,6 +166,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 6. **path โหลดไฟล์กลับ** — `loadFromServer` ต้องเติม prefix `recordings/` (ไฟล์เสิร์ฟที่ `/recordings/`)
 7. **Electron ไม่ปิดจริงตอนปิดหน้าต่าง** — `window-all-closed → app.quit()` เพื่อให้เปิดใหม่อ่านสิทธิ์ล่าสุด
 8. **tab ที่ถูกพักเบื้องหลัง rAF หยุด** — export/segment ใช้ setInterval เป็น backup ของ rAF; และ tab hidden ทำ automated test เพี้ยน (เวลา/เฟรม) — เทสต์ playback/export ต้องระวังจุดนี้
+9. **window shadow ทำให้ click coordinate เพี้ยน** — `CGWindowBounds` ไม่รวมเงา แต่ `screencapture -l` รวมเงาโดย default จึงต้องใช้ `-o`; บน Retina ขนาดวิดีโอควรเป็น bounds คูณ backing scale โดยไม่มี margin รอบภาพ
 
 ---
 
@@ -183,9 +184,6 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 ---
 
 ## 9. TODO / ทิศทางต่อ
-- [ ] **Recording blocker:** หลังเริ่มอัด หน้า editor ไม่มีปุ่ม `Stop Recording` ที่มองเห็นและกดได้ ต้องเพิ่มสถานะ recording ที่ชัดเจนพร้อม elapsed time และปุ่มหยุดซึ่งเข้าถึงได้ตลอดการอัด
-- [ ] **Tap coordinate blocker:** จุด tap/click indicator ที่แสดงบนวิดีโอไม่ตรงกับตำแหน่งที่ผู้ใช้กดจริง ต้องตรวจ mapping ตั้งแต่ captured screen/window bounds, display scale/orientation, crop ไปจนถึง canvas/source coordinates
-- [ ] **Preview transport:** เพิ่มชุดควบคุม playback กึ่งกลางใต้ preview ตาม reference: current time, previous/step-back, ปุ่ม Play/Pause หลัก, next/step-forward และ total duration; เวลาและสถานะปุ่มต้อง sync กับ playhead/timeline จริงและใช้ได้ด้วย keyboard shortcuts เดิม
 - [ ] Windows EXE (backend อัดด้วย ffmpeg แทน screencapture ซึ่งเป็น macOS-only)
 - [ ] Notarize (ต้องมี Apple Developer $99/ปี) → เปิดได้เนียนไม่มีเตือน
 - [ ] ไอคอนแอป (ตอนนี้ใช้ default Electron)
