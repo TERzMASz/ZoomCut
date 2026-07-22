@@ -115,6 +115,19 @@ async function findMirrorWindow() {
 function appHasWindows(wins, pid) {
   return wins.some((w) => w.pid === pid && w.bounds && w.bounds.w > 100 && w.bounds.h > 100);
 }
+function focusProcess(pid) {
+  if (!pid || process.platform !== 'darwin') return Promise.resolve(false);
+  const script = `
+ObjC.import('AppKit');
+var app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(${Number(pid)});
+app ? app.activateWithOptions($.NSApplicationActivateIgnoringOtherApps) : false;`;
+  return runJxa(script).then(() => true).catch(() => false);
+}
+async function focusWindowBeforeRecording(pid) {
+  if (!pid) return;
+  await focusProcess(pid);
+  await new Promise((r) => setTimeout(r, 450));
+}
 
 function ffprobeDuration(file) {
   return new Promise((resolve) => {
@@ -283,6 +296,7 @@ async function startRecording(recordingsDir, opts) {
     rec.wid = wid;
     const winsNow = await jxaListWindows();
     rec.ownerPid = (winsNow.find((w) => w.id === wid) || {}).pid || null;
+    await focusWindowBeforeRecording(rec.ownerPid);
     capArgs = ['-v', '-C', '-l', String(wid)];
   }
 
