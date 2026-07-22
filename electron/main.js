@@ -51,6 +51,15 @@ function webRoot() {
   return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
 }
 
+function isTrustedRenderer(webContents) {
+  if (!mainWindow || !serverInfo || webContents !== mainWindow.webContents) return false;
+  try {
+    return new URL(webContents.getURL()).origin === `http://127.0.0.1:${serverInfo.port}`;
+  } catch {
+    return false;
+  }
+}
+
 async function createWindow() {
   serverInfo = await startServer({
     webRoot: webRoot(),
@@ -162,6 +171,12 @@ async function createWindow() {
       camera: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('camera') : 'granted',
       accessibility: process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true,
     }));
+    handle('system:request-media-access', async (kind) => {
+      const type = String(kind || '');
+      if (!['microphone', 'camera'].includes(type)) throw new Error('Invalid media permission type');
+      if (process.platform !== 'darwin') return true;
+      return systemPreferences.askForMediaAccess(type);
+    });
     handle('system:open-privacy', (pane) => {
       const pages = {
         screen: 'Privacy_ScreenCapture', microphone: 'Privacy_Microphone', camera: 'Privacy_Camera',
@@ -178,13 +193,11 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
-    const local = serverInfo && requestingOrigin === `http://127.0.0.1:${serverInfo.port}`;
-    return local && ['media', 'display-capture'].includes(permission);
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    return isTrustedRenderer(webContents) && ['media', 'display-capture'].includes(permission);
   });
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    const local = serverInfo && webContents.getURL().startsWith(`http://127.0.0.1:${serverInfo.port}/`);
-    callback(Boolean(local && ['media', 'display-capture'].includes(permission)));
+    callback(Boolean(isTrustedRenderer(webContents) && ['media', 'display-capture'].includes(permission)));
   });
   // แจ้งสถานะสิทธิ์ Screen Recording (จอ) — ไม่บล็อก แค่เปิดหน้า settings ให้ถ้ายังไม่ได้
   if (process.platform === 'darwin') {

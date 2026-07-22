@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('zoomcutDesktop', {
   },
   system: {
     permissions: () => ipcRenderer.invoke('system:permissions'),
+    requestMediaAccess: (kind) => ipcRenderer.invoke('system:request-media-access', kind),
     openPrivacy: (pane) => ipcRenderer.invoke('system:open-privacy', pane),
     recordingIndicator: (active) => ipcRenderer.invoke('system:recording-indicator', Boolean(active)),
   },

@@ -1263,8 +1263,8 @@ const I18N = {
     androidRecordSub: d => `อัดด้วย adb screenrecord + จับ touch จาก getevent • ${d.model || d.serial}`,
     cancel: 'ยกเลิก', diagTitle: 'ตรวจระบบ ZoomCut', exportTitle: 'กำลัง Export วิดีโอ…',
     exportSub: 'กำลังเรนเดอร์แบบเรียลไทม์ — อย่าปิดหรือสลับไปแท็บอื่น (ต้องให้แท็บนี้แสดงอยู่)',
-    micDefault: 'ไมค์เริ่มต้น', micLoading: 'กำลังโหลดไมค์...', micNoDevices: 'ไม่พบไมค์',
-    camDefault: 'กล้องเริ่มต้น', camLoading: 'กำลังโหลดกล้อง...', camNoDevices: 'ไม่พบกล้อง',
+    micDefault: 'ไมค์เริ่มต้น', micLoading: 'กำลังโหลดไมค์...', micNoDevices: 'ไม่พบไมค์', micGrant: 'อนุญาตเพื่อดูไมค์ทั้งหมด…',
+    camDefault: 'กล้องเริ่มต้น', camLoading: 'กำลังโหลดกล้อง...', camNoDevices: 'ไม่พบกล้อง', camGrant: 'อนุญาตเพื่อดูกล้องทั้งหมด…',
     camOn: '📷 กล้อง', camOff: '📷 ปิดกล้อง', cameraClip: n => `กล้อง ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 ลบกล้อง', fadeIn: 'Fade in', fadeOut: 'Fade out',
     videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
@@ -1320,8 +1320,8 @@ const I18N = {
     androidRecordSub: d => `Record with adb screenrecord + getevent touch tracking • ${d.model || d.serial}`,
     cancel: 'Cancel', diagTitle: 'ZoomCut diagnostics', exportTitle: 'Exporting video…',
     exportSub: 'Rendering in real time. Keep this window visible until export finishes.',
-    micDefault: 'Default microphone', micLoading: 'Loading mics...', micNoDevices: 'No microphones found',
-    camDefault: 'Default camera', camLoading: 'Loading cameras...', camNoDevices: 'No cameras found',
+    micDefault: 'Default microphone', micLoading: 'Loading mics...', micNoDevices: 'No microphones found', micGrant: 'Allow access to show all microphones…',
+    camDefault: 'Default camera', camLoading: 'Loading cameras...', camNoDevices: 'No cameras found', camGrant: 'Allow access to show all cameras…',
     camOn: '📷 Camera', camOff: '📷 Camera off', cameraClip: n => `Camera ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 Delete camera', fadeIn: 'Fade in', fadeOut: 'Fade out',
     videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
@@ -2961,21 +2961,31 @@ async function refreshMicDevices() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const mics = devices.filter(d => d.kind === 'audioinput');
+    const visible = mics.filter(d => d.label && d.deviceId !== 'default');
+    const needsAccess = mics.some(d => !d.label);
     sel.innerHTML = '';
     const def = document.createElement('option');
     def.value = '';
-    def.textContent = tr('micDefault');
+    const defaultMic = mics.find(d => d.deviceId === 'default' && d.label);
+    def.textContent = defaultMic
+      ? `${tr('micDefault')} — ${defaultMic.label.replace(/^Default\s*-\s*/i, '')}`
+      : tr('micDefault');
     sel.appendChild(def);
-    mics.forEach((d, i) => {
+    visible.forEach(d => {
       const o = document.createElement('option');
       o.value = d.deviceId;
-      o.textContent = d.label || `${tr('micDefault')} ${i + 1}`;
+      o.textContent = d.label;
       if (state.selectedMicId && d.deviceId === state.selectedMicId) o.selected = true;
       sel.appendChild(o);
     });
-    if (!mics.length) sel.innerHTML = `<option value="">${tr('micNoDevices')}</option>`;
+    if (needsAccess || !mics.length) {
+      const grant = document.createElement('option');
+      grant.value = '__grant_microphone__';
+      grant.textContent = tr('micGrant');
+      sel.appendChild(grant);
+    }
   } catch {
-    sel.innerHTML = `<option value="">${tr('micDefault')}</option>`;
+    sel.innerHTML = `<option value="">${tr('micDefault')}</option><option value="__grant_microphone__">${tr('micGrant')}</option>`;
   }
 }
 async function refreshCameraDevices() {
@@ -2984,33 +2994,84 @@ async function refreshCameraDevices() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cams = devices.filter(d => d.kind === 'videoinput');
+    const visible = cams.filter(d => d.label && d.deviceId !== 'default');
+    const needsAccess = cams.some(d => !d.label);
     sel.innerHTML = '';
     const def = document.createElement('option');
     def.value = '';
-    def.textContent = tr('camDefault');
+    const defaultCamera = cams.find(d => d.deviceId === 'default' && d.label);
+    def.textContent = defaultCamera
+      ? `${tr('camDefault')} — ${defaultCamera.label.replace(/^Default\s*-\s*/i, '')}`
+      : tr('camDefault');
     sel.appendChild(def);
-    cams.forEach((d, i) => {
+    visible.forEach(d => {
       const o = document.createElement('option');
       o.value = d.deviceId;
-      o.textContent = d.label || `${tr('camDefault')} ${i + 1}`;
+      o.textContent = d.label;
       if (state.selectedCamId && d.deviceId === state.selectedCamId) o.selected = true;
       sel.appendChild(o);
     });
-    if (!cams.length) sel.innerHTML = `<option value="">${tr('camNoDevices')}</option>`;
+    if (needsAccess || !cams.length) {
+      const grant = document.createElement('option');
+      grant.value = '__grant_camera__';
+      grant.textContent = tr('camGrant');
+      sel.appendChild(grant);
+    }
   } catch {
-    sel.innerHTML = `<option value="">${tr('camDefault')}</option>`;
+    sel.innerHTML = `<option value="">${tr('camDefault')}</option><option value="__grant_camera__">${tr('camGrant')}</option>`;
   }
 }
-$('micSel').onchange = e => {
+let requestingMediaAccess = false;
+async function requestMediaAccess(kind) {
+  if (requestingMediaAccess) return false;
+  requestingMediaAccess = true;
+  const sel = kind === 'microphone' ? $('micSel') : $('camSel');
+  sel.disabled = true;
+  try {
+    if (desktop?.system.requestMediaAccess) {
+      const granted = await desktop.system.requestMediaAccess(kind);
+      if (!granted) throw new Error(kind === 'microphone' ? tr('micPermission') : (state.lang === 'th'
+        ? 'ไม่สามารถเปิดกล้องได้ กรุณาอนุญาต Camera ให้ ZoomCut ใน System Settings'
+        : 'Cannot open camera. Allow ZoomCut Camera access in System Settings.'));
+    }
+    const constraints = kind === 'microphone' ? { audio: true } : { video: true };
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    stream.getTracks().forEach(track => track.stop());
+    await refreshMicDevices();
+    await refreshCameraDevices();
+    return true;
+  } catch (error) {
+    showActionableError(error?.message || (kind === 'microphone' ? tr('micPermission') : 'Camera permission denied'));
+    if (kind === 'microphone') await refreshMicDevices();
+    else await refreshCameraDevices();
+    return false;
+  } finally {
+    requestingMediaAccess = false;
+    sel.disabled = false;
+  }
+}
+$('micSel').onchange = async e => {
+  if (e.target.value === '__grant_microphone__') {
+    e.target.value = '';
+    await requestMediaAccess('microphone');
+    return;
+  }
   state.selectedMicId = e.target.value;
   localStorage.setItem('zoomcut-mic', state.selectedMicId);
 };
-$('camSel').onchange = e => {
+$('camSel').onchange = async e => {
+  if (e.target.value === '__grant_camera__') {
+    e.target.value = '';
+    await requestMediaAccess('camera');
+    return;
+  }
   state.selectedCamId = e.target.value;
   localStorage.setItem('zoomcut-camera', state.selectedCamId);
 };
-$('camToggle').onclick = () => {
-  state.recordCamera = !state.recordCamera;
+$('camToggle').onclick = async () => {
+  const enable = !state.recordCamera;
+  if (enable && !await requestMediaAccess('camera')) return;
+  state.recordCamera = enable;
   localStorage.setItem('zoomcut-record-camera', state.recordCamera ? '1' : '0');
   applyLanguage();
 };
