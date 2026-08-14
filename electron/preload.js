@@ -9,6 +9,12 @@ function appendExportChunk(sessionId, arrayBuffer) {
   return ipcRenderer.invoke('export:append', sessionId, arrayBuffer);
 }
 
+function appendMediaChunk(sessionId, arrayBuffer) {
+  if (Object.prototype.toString.call(arrayBuffer) !== '[object ArrayBuffer]') return Promise.reject(new Error('Recorded media chunk must be an ArrayBuffer'));
+  if (arrayBuffer.byteLength > MAX_EXPORT_CHUNK_BYTES) return Promise.reject(new Error('Recorded media chunk exceeds size limit'));
+  return ipcRenderer.invoke('media:append-stream', sessionId, arrayBuffer);
+}
+
 contextBridge.exposeInMainWorld('zoomcutDesktop', {
   getPathForFile: (file) => webUtils.getPathForFile(file),
   project: {
@@ -20,6 +26,10 @@ contextBridge.exposeInMainWorld('zoomcutDesktop', {
     resetCurrent: () => ipcRenderer.invoke('project:reset-current'),
     registerProjectPath: (filePath) => ipcRenderer.invoke('media:register-project-path', filePath),
     persistAsset: (arrayBuffer, extension) => ipcRenderer.invoke('media:persist', arrayBuffer, extension),
+    beginStream: (extension) => ipcRenderer.invoke('media:begin-stream', extension),
+    appendStream: appendMediaChunk,
+    finishStream: (sessionId) => ipcRenderer.invoke('media:finish-stream', sessionId),
+    cancelStream: (sessionId) => ipcRenderer.invoke('media:cancel-stream', sessionId),
     registerRecording: (base) => ipcRenderer.invoke('media:register-recording', base),
     chooseReplacement: (name) => ipcRenderer.invoke('media:choose-replacement', name),
     authorizeFile: (file) => ipcRenderer.invoke('media:authorize-user-file', webUtils.getPathForFile(file)),

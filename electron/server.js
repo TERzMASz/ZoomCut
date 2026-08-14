@@ -151,6 +151,42 @@ function ffprobeCodec(file) {
       (err, out) => resolve(err ? '' : String(out).trim()));
   });
 }
+
+function remuxInterruptedMov(input, output) {
+  return ffprobeCodec(input).then(codec => new Promise((resolve, reject) => {
+    const args = codec === 'h264'
+      ? ['-y', '-hide_banner', '-loglevel', 'error', '-i', input, '-c', 'copy', '-movflags', '+faststart', output]
+      : ['-y', '-hide_banner', '-loglevel', 'error', '-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', output];
+    execFile(FFMPEG, args, { env: CHILD_ENV, maxBuffer: 1 << 24 }, (error, stdout, stderr) => {
+      if (error) return reject(new Error(String(stderr || stdout || error.message).trim()));
+      resolve();
+    });
+  }));
+}
+
+async function recoverInterruptedRecordings(recordingsDir, remux = remuxInterruptedMov) {
+  fs.mkdirSync(recordingsDir, { recursive: true });
+  const recovered = [];
+  const names = fs.readdirSync(recordingsDir).filter(name => /^recording-[0-9]+\.mov$/.test(name)).sort();
+  for (const name of names) {
+    const input = path.join(recordingsDir, name);
+    const base = input.slice(0, -4);
+    const output = base + '.mp4';
+    try {
+      if (!fs.statSync(input).size) continue;
+      if (!fs.existsSync(output)) await remux(input, output);
+      if (!fs.existsSync(output) || !fs.statSync(output).size) continue;
+      const clicksPath = base + '.clicks.json';
+      if (!fs.existsSync(clicksPath)) fs.writeFileSync(clicksPath, JSON.stringify({ version: 1, recovered: true, clicks: [] }, null, 2));
+      fs.unlinkSync(input);
+      recovered.push(path.basename(base));
+      dbg(`record/recovered base=${path.basename(base)}`);
+    } catch (error) {
+      dbg(`record/recovery failed file=${name} error=${error.message}`);
+    }
+  }
+  return recovered;
+}
 function binStatus(name, bin, args = ['-version']) {
   return new Promise((resolve) => {
     execFile(bin, args, { env: CHILD_ENV, timeout: 3000 }, (err, stdout, stderr) => {
@@ -272,7 +308,7 @@ const rec = {
   proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
   boundsRefreshRunning: false,
   androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
-  finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '',
+  finished: false, error: null, hookRunning: false, hookActivity: false, capStderr: '', ffmpegError: '',
 };
 
 function resetRec() {
@@ -280,7 +316,7 @@ function resetRec() {
     proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null,
     boundsRefreshRunning: false,
     androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
-    finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '' });
+    finished: false, error: null, hookRunning: false, hookActivity: false, capStderr: '', ffmpegError: '' });
 }
 
 async function startRecording(recordingsDir, opts) {
@@ -341,7 +377,16 @@ async function startRecording(recordingsDir, opts) {
   // ยืนยันเริ่มอัดเมื่อ screencapture รันต่อเนื่อง 0.8s (ไฟล์ไม่โผล่ระหว่างอัด)
   const launchedAt = Date.now();
   let capExited = false;
-  cap.on('exit', () => { capExited = true; });
+  cap.on('exit', () => {
+    capExited = true;
+    if (rec.proc === cap && rec.active && rec.startedAt !== null) {
+      dbg('screencapture exited unexpectedly; finalizing partial recording');
+      stopRecording().catch(error => {
+        rec.error = `Recording stopped unexpectedly: ${error.message}`;
+        rec.processing = false;
+      });
+    }
+  });
   const confirm = setInterval(() => {
     if (!rec.active) { clearInterval(confirm); return; }
     if (capExited && rec.startedAt === null) {
@@ -461,7 +506,7 @@ function startInputHook() {
     env: CHILD_ENV,
     stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
   });
-  const handle = { proc, exited: false, readyTimer: null };
+  const handle = { proc, exited: false, readyTimer: null, healthTimer: null };
   rec.hookProc = handle;
   handle.readyTimer = setTimeout(() => {
     if (rec.hookProc !== handle || rec.hookRunning) return;
@@ -473,7 +518,19 @@ function startInputHook() {
     if (message?.type === 'ready') {
       clearTimeout(handle.readyTimer);
       rec.hookRunning = true;
+      handle.healthTimer = setTimeout(() => {
+        if (rec.hookProc !== handle || !rec.active || rec.hookActivity) return;
+        rec.trackingError = 'Click tracking has not received input. Move the pointer or allow ZoomCut in Input Monitoring, then restart the app.';
+        dbg(rec.trackingError);
+      }, 8000);
+      handle.healthTimer.unref?.();
       dbg(`input hook worker ready pid=${proc.pid}`);
+      return;
+    }
+    if (message?.type === 'activity') {
+      rec.hookActivity = true;
+      clearTimeout(handle.healthTimer);
+      if (/has not received input/.test(rec.trackingError || '')) rec.trackingError = null;
       return;
     }
     if (message?.type === 'mousedown' && rec.active && rec.startedAt !== null && rec.bounds) {
@@ -498,6 +555,7 @@ function startInputHook() {
   proc.on('exit', (code, signal) => {
     handle.exited = true;
     clearTimeout(handle.readyTimer);
+    clearTimeout(handle.healthTimer);
     if (rec.hookProc !== handle) return;
     rec.hookProc = null;
     rec.hookRunning = false;
@@ -511,6 +569,7 @@ function stopInputHook() {
   rec.hookRunning = false;
   if (!handle || handle.exited) return;
   clearTimeout(handle.readyTimer);
+  clearTimeout(handle.healthTimer);
   const { proc } = handle;
   try { proc.send({ type: 'stop' }); } catch {}
   const term = setTimeout(() => {
@@ -645,6 +704,7 @@ function recordState() {
     error: rec.error,
     hasClickTracking: inputHookAvailable(),
     hookRunning: rec.hookRunning,
+    hookReceivingEvents: rec.hookActivity,
     debugLog: DEBUG_LOG,
     androidConnected: rec.mode === 'android' ? rec.androidConnected : undefined,
     trackingError: rec.trackingError || undefined,
@@ -666,6 +726,7 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
   const mediaPaths = new Map();
   const exportTargets = new Map();
   const exportJobs = new Map();
+  let recoveredRecordings = [];
   const maxExportBytes = Math.max(256 * 1024 * 1024, Number(process.env.ZOOMCUT_MAX_EXPORT_BYTES) || 256 * 1024 * 1024 * 1024);
 
   const registerMediaPath = (filePath) => {
@@ -743,29 +804,42 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
     return { inputArgs, filter: filters.join(';') };
   };
   const runRemux = async (input, output, jobId, metadata = {}) => {
-    let args;
+    const hardwareVideoArgs = process.platform === 'darwin'
+      ? ['-c:v', 'h264_videotoolbox', '-b:v', metadata.width >= 3840 ? '24M' : metadata.width >= 2560 ? '16M' : '10M', '-allow_sw', '1']
+      : null;
+    const softwareVideoArgs = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20'];
+    const buildArgs = async videoArgs => {
     if (metadata.ext === 'mjpeg') {
       const audio = await offlineAudioArgs(metadata.audioPlan);
-      args = ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(metadata.fps || 30), '-vcodec', 'mjpeg', '-i', input,
+      return ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(metadata.fps || 30), '-vcodec', 'mjpeg', '-i', input,
         ...audio.inputArgs, '-filter_complex', audio.filter, '-map', '0:v:0', '-map', '[mix]',
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', output];
-    } else {
-      args = ['-y', '-hide_banner', '-loglevel', 'error', '-i', input,
-        '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-        '-pix_fmt', 'yuv420p', '-r', '30', '-vsync', 'cfr', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output];
+        ...videoArgs, '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', output];
     }
-    return new Promise((resolve, reject) => {
-    const proc = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
-    exportJobs.set(jobId, proc);
-    let stderr = '';
-    proc.stderr.on('data', (chunk) => { stderr = (stderr + String(chunk)).slice(-64 * 1024); });
-    proc.on('error', reject);
-    proc.on('exit', (code, signal) => {
-      exportJobs.delete(jobId);
-      if (code === 0 && fs.existsSync(output)) resolve();
-      else reject(new Error(signal ? 'export canceled' : (stderr.trim() || `ffmpeg exited ${code}`)));
+      return ['-y', '-hide_banner', '-loglevel', 'error', '-i', input,
+        '-map', '0:v:0', '-map', '0:a?', ...videoArgs,
+        '-pix_fmt', 'yuv420p', '-r', '30', '-vsync', 'cfr', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output];
+    };
+    const run = args => new Promise((resolve, reject) => {
+      const proc = spawn(FFMPEG, args, { stdio: ['ignore', 'ignore', 'pipe'], env: CHILD_ENV });
+      exportJobs.set(jobId, proc);
+      let stderr = '';
+      proc.stderr.on('data', (chunk) => { stderr = (stderr + String(chunk)).slice(-64 * 1024); });
+      proc.on('error', reject);
+      proc.on('exit', (code, signal) => {
+        exportJobs.delete(jobId);
+        if (code === 0 && fs.existsSync(output)) resolve();
+        else reject(new Error(signal ? 'export canceled' : (stderr.trim() || `ffmpeg exited ${code}`)));
+      });
     });
-    });
+    if (hardwareVideoArgs) {
+      try { return await run(await buildArgs(hardwareVideoArgs)); }
+      catch (error) {
+        if (/canceled/i.test(error.message)) throw error;
+        try { fs.unlinkSync(output); } catch {}
+        dbg(`VideoToolbox export unavailable; falling back to libx264: ${error.message}`);
+      }
+    }
+    return run(await buildArgs(softwareVideoArgs));
   };
   const cancelRemux = (jobId) => {
     const proc = exportJobs.get(String(jobId || ''));
@@ -800,7 +874,7 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
     const baseHeaders = {
       'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer',
       'Cross-Origin-Resource-Policy': 'same-origin',
-      'Content-Security-Policy': "default-src 'self' blob:; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'",
+      'Content-Security-Policy': "default-src 'self' blob:; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'",
     };
     const send = (obj, code = 200) => {
       const body = JSON.stringify(obj);
@@ -815,6 +889,10 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
         return send({ windows, displays, androidDevices });
       }
       if (url.pathname === '/api/record/state') return send(recordState());
+      if (url.pathname === '/api/record/recovered') {
+        if (req.method === 'POST') recoveredRecordings = [];
+        return send({ recordings: recoveredRecordings });
+      }
       if (url.pathname === '/api/diagnostics') return send(await diagnostics());
       if (url.pathname === '/api/record/start' && req.method === 'POST') {
         const opts = normalizeRecordingOptions(await readJsonBody(req, 64 * 1024));
@@ -880,13 +958,16 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
   });
 
   return new Promise((resolve) => {
-    server.listen(port, '127.0.0.1', () => resolve({
-      server, port: server.address().port, recordingsDir, apiToken, registerMediaPath, registerExportTarget, exportSessions,
-    }));
+    recoverInterruptedRecordings(recordingsDir)
+      .then(items => { recoveredRecordings = items; })
+      .catch(error => dbg(`record/recovery scan failed: ${error.message}`))
+      .finally(() => server.listen(port, '127.0.0.1', () => resolve({
+        server, port: server.address().port, recordingsDir, apiToken, registerMediaPath, registerExportTarget, exportSessions,
+      })));
   });
 }
 
-module.exports = { startServer, listRecordableWindows, startRecording, stopRecording, recordState, buildScreencaptureArgs };
+module.exports = { startServer, listRecordableWindows, startRecording, stopRecording, recordState, buildScreencaptureArgs, recoverInterruptedRecordings };
 
 // รันเดี่ยวเพื่อทดสอบ: node electron/server.js
 if (require.main === module) {

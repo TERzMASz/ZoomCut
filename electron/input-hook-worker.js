@@ -4,6 +4,7 @@ const STOP_KEYCODE = 31;
 
 function runInputHookWorker({ hook, transport = process, exit = code => process.exit(code) }) {
   let stopping = false;
+  let activitySent = false;
   const send = message => {
     try { if (transport.connected !== false && typeof transport.send === 'function') transport.send(message); } catch {}
   };
@@ -14,11 +15,19 @@ function runInputHookWorker({ hook, transport = process, exit = code => process.
     send({ type: 'stopped' });
     setImmediate(() => exit(0));
   };
+  const reportActivity = () => {
+    if (activitySent) return;
+    activitySent = true;
+    send({ type: 'activity' });
+  };
 
   hook.on('mousedown', event => {
+    reportActivity();
     send({ type: 'mousedown', x: Number(event.x), y: Number(event.y), wall: Date.now() });
   });
+  hook.on('mousemove', reportActivity);
   hook.on('keydown', event => {
+    reportActivity();
     if (event.keycode === STOP_KEYCODE && event.ctrlKey && event.metaKey) send({ type: 'stop-request' });
   });
   transport.on('message', message => { if (message?.type === 'stop') stop(); });

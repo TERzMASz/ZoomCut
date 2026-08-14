@@ -16,14 +16,15 @@
 | **เว็บ (Vercel)** | ❌ (ลากไฟล์เข้ามาแก้อย่างเดียว) | `index.html` เป็น static site |
 | **แอปเดสก์ท็อป (Electron .dmg)** | ✅ อัด + ซูมอัตโนมัติ + ตัดต่อครบ | `electron/` + `index.html` |
 
-`index.html` ไฟล์เดียวเป็น renderer ของทั้งสองแบบ — **ห้ามแยกโค้ด editor เป็นสองชุด**
+`index.html` และไฟล์ใน `shared/` เป็น renderer ชุดเดียวของทั้งสองแบบ — **ห้ามแยกโค้ด editor เป็นสองชุด**
 
 ---
 
 ## 2. โครงไฟล์
 
 ```
-index.html            ← ตัวแก้ไข/ตัดต่อทั้งหมด (vanilla JS + <canvas>, ไม่มี build step)
+index.html            ← โครง DOM/CSS ของ editor (vanilla + <canvas>, ไม่มี build step)
+shared/editor-app.js ← state, rendering, recording และ timeline behavior หลัก
 shared/editor-core.js ← project schema + pure timeline/project helpers (ใช้ได้ทั้ง browser/Node tests)
 shared/editor-shell.js← จัด panel/inspector และเชื่อม UI shell ใหม่กับ control เดิมโดยไม่ทำ state ซ้ำ
 shared/editor-shell.css← layout แบบ NLE: tool rail, sidebar, preview, inspector, timeline
@@ -108,11 +109,11 @@ sourceRect(cam)       → แปลงกล้อง → พิกัดพิ�
 - `outputDuration()` = ผลรวม `(end-start)/speed`
 
 ### 4.5 Export
-Desktop export คำนวณ output time ทีละเฟรมที่ 30 fps → seek base/overlay/camera → วาด canvas เป็น MJPEG chunks → `export-session.js` → ffmpeg H.264/AAC. Audio graph ประกอบ base segments, speed, lane mute, overlay และ voice โดยไม่ผูกกับ wall-clock playback.
-ก่อนเริ่มจะตรวจพื้นที่ disk; session มี journal ใน `userData/export-recovery` และล้าง input/`.part.mp4` ที่เหลือจาก crash เมื่อเปิดแอปครั้งถัดไป. บนเว็บยัง fallback เป็น MediaRecorder blob.
+Desktop export คำนวณ output time ทีละเฟรมที่ 30 fps → seek base/overlay/camera → วาด canvas เป็น MJPEG chunks → `export-session.js` → ffmpeg H.264/AAC. บน macOS ใช้ VideoToolbox และ fallback เป็น libx264. Audio graph ประกอบ base segments, speed, lane mute, overlay และ voice โดยไม่ผูกกับ wall-clock playback.
+ก่อนเริ่มและระหว่าง export จะตรวจพื้นที่ disk จากขนาดเฟรมจริง; session มี journal ใน `userData/export-recovery` และล้าง input/`.part.mp4` ที่เหลือจาก crash เมื่อเปิดแอปครั้งถัดไป. บนเว็บยัง fallback เป็น MediaRecorder blob.
 
 ### 4.7 Project persistence
-ไฟล์ `.zoomcut` เก็บ schema version, settings, lanes, trims, zooms และ media paths. Autosave เขียนแบบ atomic ไปที่ `userData/recovery`; voice/camera ที่อัดในแอปเก็บแบบ content-addressed ใน `userData/project-assets`. เปิดโปรเจกต์แล้วหา media ไม่เจอจะขอ relink.
+ไฟล์ `.zoomcut` เก็บ schema version, settings, lanes, trims, zooms และ media paths. Autosave เขียนแบบ atomic ไปที่ `userData/recovery`; voice/camera เขียนลง `userData/project-assets` ทีละ chunk ระหว่างอัดและเปลี่ยนเป็นชื่อแบบ content-addressed เมื่อจบ จึงไม่กองคลิปยาวไว้ใน RAM. เปิดโปรเจกต์แล้วหา media ไม่เจอจะขอ relink.
 
 ### 4.6 สะพานเชื่อม recording (renderer ↔ server)
 renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ่ม "🔴 อัดหน้าจอ" แสดงเฉพาะเมื่อ `/api/record/state` ตอบ (คือรันในแอป/ผ่าน server) — บนเว็บ Vercel จะซ่อนอัตโนมัติ
@@ -153,7 +154,8 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
   - ad-hoc (`--sign -`) → DR อ้าง cdhash → **เปลี่ยนทุก build** → สิทธิ์หลุดทุกครั้งที่อัปเดต ❌
   - self-signed cert → DR อ้าง `certificate leaf` → **คงที่** → ให้สิทธิ์ครั้งเดียวใช้ได้ตลอด ✅
 - `electron-builder` ตั้ง `mac.identity: null` (ข้ามการเซ็น) แล้ว **เซ็นเองหลัง build** ด้วย cert นี้ใน `build-signed.sh`
-- ยังไม่ notarize (beta) → ผู้ใช้เปิดครั้งแรกต้อง **คลิกขวา → Open**
+- internal beta แบบ self-signed ยังไม่ notarize → ผู้ใช้เปิดครั้งแรกต้อง **คลิกขวา → Open**
+- public beta ต้องตั้ง `ZOOMCUT_PUBLIC_RELEASE=1`, ใช้ Developer ID และ notarize; ดู `SECURITY_RELEASE.md`
 - reset สิทธิ์เวลาเทสต์: `tccutil reset ScreenCapture com.zoomcut.app` (+ `ListenEvent`, `Accessibility`)
 
 ---
@@ -177,11 +179,11 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 
 | อยากทำ | ไฟล์ / จุด |
 |--------|-----------|
-| เพิ่ม/แก้ตัวเลือกในหน้าเลือกแหล่งอัด | `index.html` `openSourcePicker()` + `server.js` `startRecording()` |
-| แก้ตรรกะซูม/กล้อง | `index.html` `cameraAt()` / `sourceRect()` (แก้ที่ sourceRect ที่เดียว) |
-| เพิ่มเฟรมอุปกรณ์ใหม่ (iPad/Mac) | `index.html` `layout()` (ค่า bezel/topBar) + `drawFrame()` |
+| เพิ่ม/แก้ตัวเลือกในหน้าเลือกแหล่งอัด | `shared/editor-app.js` `openSourcePicker()` + `server.js` `startRecording()` |
+| แก้ตรรกะซูม/กล้อง | `shared/editor-app.js` `cameraAt()` / `sourceRect()` (แก้ที่ sourceRect ที่เดียว) |
+| เพิ่มเฟรมอุปกรณ์ใหม่ (iPad/Mac) | `shared/editor-app.js` `layout()` (ค่า bezel/topBar) + `drawFrame()` |
 | แก้คุณภาพ/รูปแบบไฟล์ export | `export-session.js` + `server.js` `runRemux()` (ffmpeg args) |
-| เพิ่ม field ใน preset | `index.html` `PRESET_FIELDS` + `applySettings()` |
+| เพิ่ม field ใน preset | `shared/editor-app.js` `PRESET_FIELDS` + `applySettings()` |
 | เพิ่ม backend อัดของ Windows | `server.js` `startRecording()` (ต้องใช้ ffmpeg gdigrab/dshow แทน screencapture) |
 
 ---
@@ -197,6 +199,6 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 
 ## 10. ธรรมเนียม
 - UI เป็น **ภาษาไทย** — คงโทนเดิม
-- renderer **ไม่มี build step** — แก้ `index.html` แล้วรีเฟรชได้เลย
+- renderer **ไม่มี build step** — แก้ `index.html`/`shared/editor-app.js` แล้วรีเฟรชได้เลย
 - คอมเมนต์อธิบาย "ทำไม" (เหตุผล/กับดัก) ไม่ใช่ "ทำอะไร"
 - ทดสอบทุกครั้งก่อนสรุปว่าเสร็จ — โดยเฉพาะ pipeline ที่มีหลายชั้น

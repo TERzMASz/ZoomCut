@@ -39,3 +39,18 @@ test('timeline snapping chooses nearest candidate only inside threshold', () => 
   assert.equal(core.snapTime(4.92, [0, 5, 10], 0.1), 5);
   assert.equal(core.snapTime(4.7, [0, 5, 10], 0.1), 4.7);
 });
+
+test('project validation strips dangerous keys and rebuilds media authorization data', () => {
+  const project = JSON.parse('{"format":"zoomcut-project","version":1,"baseMedia":{"sourcePath":"/tmp/base.mp4"},"settings":{"aspect":"16:9","constructor":{"polluted":true}},"state":{"segments":[{"start":0,"end":1,"speed":1}],"videoClips":[],"voiceovers":[],"facecams":[],"events":[],"taps":[]},"mediaPaths":[{"path":"/etc/passwd"}]}');
+  core.validateProject(project);
+  assert.equal(Object.hasOwn(project.settings, 'constructor'), false);
+  assert.deepEqual(project.mediaPaths.map(item => item.path), ['/tmp/base.mp4']);
+});
+
+test('project validation rejects non-string clip media paths', () => {
+  const project = {
+    format: 'zoomcut-project', version: 1, baseMedia: { sourcePath: '/tmp/base.mp4' },
+    state: { segments: [{ start: 0, end: 1 }], videoClips: [{ sourcePath: { path: '/etc/passwd' } }] },
+  };
+  assert.throws(() => core.validateProject(project), /invalid media path/);
+});

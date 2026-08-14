@@ -22,10 +22,11 @@ test('input hook worker forwards clicks and stop shortcut over IPC', async () =>
   assert.deepEqual(messages.shift(), { type: 'ready' });
 
   hook.emit('mousedown', { x: 321, y: 654 });
-  assert.equal(messages[0].type, 'mousedown');
-  assert.equal(messages[0].x, 321);
-  assert.equal(messages[0].y, 654);
-  assert.equal(Number.isFinite(messages[0].wall), true);
+  assert.deepEqual(messages[0], { type: 'activity' });
+  assert.equal(messages[1].type, 'mousedown');
+  assert.equal(messages[1].x, 321);
+  assert.equal(messages[1].y, 654);
+  assert.equal(Number.isFinite(messages[1].wall), true);
 
   hook.emit('keydown', { keycode: STOP_KEYCODE, ctrlKey: true, metaKey: true });
   assert.deepEqual(messages.at(-1), { type: 'stop-request' });

@@ -62,3 +62,17 @@ test('stale export journals clean crash leftovers on next launch', () => {
   assert.equal(fs.existsSync(outputPart), false);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('export aborts during streaming when observed frame size outgrows free disk', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'zoomcut-export-disk-guard-'));
+  const manager = createExportSessionManager({
+    tempRoot: root, reserveBytes: 0, diskCheckIntervalBytes: 1,
+    getFreeBytes: () => 20,
+    consumeTarget: () => path.join(root, 'result.mp4'),
+    runRemux: async () => {}, cancelRemux: () => {},
+  });
+  const session = manager.begin({ targetId: 'target', ext: 'mjpeg', expectedChunks: 100 });
+  await assert.rejects(manager.append(session.id, Buffer.alloc(10)), /disk space/);
+  await manager.cancel(session.id);
+  fs.rmSync(root, { recursive: true, force: true });
+});

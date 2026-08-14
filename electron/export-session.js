@@ -36,7 +36,7 @@ function cleanupStaleExports(recoveryDir, tempRoot = os.tmpdir()) {
   return cleaned;
 }
 
-function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxBytes = DEFAULT_MAX_BYTES, tempRoot = os.tmpdir(), recoveryDir }) {
+function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxBytes = DEFAULT_MAX_BYTES, tempRoot = os.tmpdir(), recoveryDir, getFreeBytes = freeBytes, reserveBytes = 1024 * 1024 * 1024, diskCheckIntervalBytes = 64 * 1024 * 1024 }) {
   const sessions = new Map();
   if (recoveryDir) fs.mkdirSync(recoveryDir, { recursive: true });
   cleanupStaleExports(recoveryDir, tempRoot);
@@ -54,16 +54,15 @@ function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxB
     if (session.journalPath) try { fs.unlinkSync(session.journalPath); } catch {}
   }
 
-  function begin({ targetId, ext, jobId, estimatedBytes = 0, fps = 30, audioPlan = null }) {
+  function begin({ targetId, ext, jobId, estimatedBytes = 0, expectedChunks = 0, fps = 30, width = 0, height = 0, audioPlan = null }) {
     const targetPath = consumeTarget(String(targetId || ''));
     if (!targetPath) throw new Error('Invalid export target');
     const id = crypto.randomBytes(18).toString('hex');
     const safeExt = normalizeExt(ext);
     const safeJobId = String(jobId || id).replace(/[^a-z0-9-]/gi, '') || id;
     const estimate = Math.max(0, Number(estimatedBytes) || 0);
-    const reserve = 1024 * 1024 * 1024;
-    const required = estimate * 1.3 + reserve;
-    if (estimate && (freeBytes(tempRoot) < required || freeBytes(path.dirname(targetPath)) < required)) {
+    const required = estimate * 1.3 + reserveBytes;
+    if (estimate && (getFreeBytes(tempRoot) < required || getFreeBytes(path.dirname(targetPath)) < required)) {
       throw new Error('Not enough disk space for export');
     }
     const tempDir = fs.mkdtempSync(path.join(tempRoot, 'zoomcut-export-stream-'));
@@ -73,8 +72,10 @@ function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxB
     const journalPath = recoveryDir ? path.join(recoveryDir, `export-${id}.json`) : null;
     const session = {
       id, targetPath, inputPath, outputPart, tempDir, stream, jobId: safeJobId,
-      bytes: 0, state: 'writing', canceled: false, streamError: null, journalPath,
-      ext: safeExt, fps: Math.max(1, Math.min(60, Number(fps) || 30)), audioPlan,
+      bytes: 0, chunks: 0, nextDiskCheck: diskCheckIntervalBytes, state: 'writing', canceled: false, streamError: null, journalPath,
+      ext: safeExt, fps: Math.max(1, Math.min(60, Number(fps) || 30)),
+      width: Math.max(0, Number(width) || 0), height: Math.max(0, Number(height) || 0),
+      estimatedBytes: estimate, expectedChunks: Math.max(0, Math.floor(Number(expectedChunks) || 0)), audioPlan,
     };
     if (journalPath) fs.writeFileSync(journalPath, JSON.stringify({ inputPath, outputPart, tempDir, createdAt: Date.now() }), { mode: 0o600 });
     stream.on('error', error => { session.streamError = error; });
@@ -92,6 +93,18 @@ function createExportSessionManager({ consumeTarget, runRemux, cancelRemux, maxB
     if (chunk.length > MAX_CHUNK_BYTES) throw new Error('Export chunk exceeds size limit');
     if (session.bytes + chunk.length > maxBytes) throw new Error('Export exceeds size limit');
     session.bytes += chunk.length;
+    session.chunks += 1;
+    if (session.bytes >= session.nextDiskCheck) {
+      const observedEstimate = session.expectedChunks && session.chunks
+        ? session.bytes / session.chunks * session.expectedChunks
+        : session.estimatedBytes;
+      const projected = Math.max(session.bytes, session.estimatedBytes, observedEstimate || 0);
+      const required = Math.max(0, projected - session.bytes) + projected * 0.35 + reserveBytes;
+      if (getFreeBytes(tempRoot) < required || getFreeBytes(path.dirname(session.targetPath)) < required) {
+        throw new Error('Not enough disk space to continue export');
+      }
+      session.nextDiskCheck = session.bytes + diskCheckIntervalBytes;
+    }
     await new Promise((resolve, reject) => session.stream.write(chunk, error => error ? reject(error) : resolve()));
     return { bytes: session.bytes };
   }

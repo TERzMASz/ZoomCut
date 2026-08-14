@@ -5,7 +5,7 @@ const { app, BrowserWindow, shell, systemPreferences, dialog, ipcMain, session, 
 const fs = require('fs');
 const path = require('path');
 const { startServer, stopRecording, recordState } = require('./server');
-const { createProjectStore } = require('./project-store');
+const { createProjectStore, projectMediaPaths } = require('./project-store');
 
 let mainWindow = null;
 let serverInfo = null;
@@ -16,10 +16,27 @@ let recordingTrayTimer = null;
 let nativeStopPromise = null;
 const RECORDING_SHORTCUT = process.platform === 'darwin' ? 'Control+Command+S' : 'Control+Shift+S';
 const authorizedMediaPaths = new Set();
+const MEDIA_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4a', '.mp3', '.wav', '.ogg']);
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) app.quit();
+else app.on('second-instance', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+});
+
+function validMediaPath(filePath) {
+  try {
+    const resolved = path.resolve(String(filePath || ''));
+    return MEDIA_EXTENSIONS.has(path.extname(resolved).toLowerCase()) && fs.existsSync(resolved) && fs.statSync(resolved).isFile();
+  } catch { return false; }
+}
 
 function authorizeProjectMedia(result) {
-  for (const item of result?.document?.mediaPaths || []) {
-    if (item?.path) authorizedMediaPaths.add(path.resolve(item.path));
+  authorizedMediaPaths.clear();
+  for (const filePath of result?.document ? projectMediaPaths(result.document) : []) {
+    if (validMediaPath(filePath)) authorizedMediaPaths.add(path.resolve(filePath));
   }
   return result;
 }
@@ -127,15 +144,15 @@ async function createWindow() {
     handle('project:autosave', (document) => projectStore.autosave(document));
     handle('project:recovery', () => authorizeProjectMedia(projectStore.recovery()));
     handle('project:clear-recovery', () => projectStore.clearRecovery());
-    handle('project:reset-current', () => projectStore.resetCurrent());
+    handle('project:reset-current', () => { authorizedMediaPaths.clear(); return projectStore.resetCurrent(); });
     handle('media:register-project-path', (filePath) => {
       const resolved = path.resolve(String(filePath || ''));
-      if (!authorizedMediaPaths.has(resolved)) throw new Error('Media path is not authorized by the opened project');
+      if (!authorizedMediaPaths.has(resolved) || !validMediaPath(resolved)) throw new Error('Media path is not authorized by the opened project');
       return serverInfo.registerMediaPath(resolved);
     });
     handle('media:authorize-user-file', (filePath) => {
       const resolved = path.resolve(String(filePath || ''));
-      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) throw new Error('Selected media file not found');
+      if (!validMediaPath(resolved)) throw new Error('Selected media file is not a supported media type');
       authorizedMediaPaths.add(resolved);
       return { ok: true };
     });
@@ -151,6 +168,14 @@ async function createWindow() {
       authorizedMediaPaths.add(path.resolve(filePath));
       return serverInfo.registerMediaPath(filePath);
     });
+    handle('media:begin-stream', (extension) => projectStore.beginAsset(extension));
+    handle('media:append-stream', (sessionId, arrayBuffer) => projectStore.appendAsset(sessionId, arrayBuffer));
+    handle('media:finish-stream', async (sessionId) => {
+      const filePath = await projectStore.finishAsset(sessionId);
+      authorizedMediaPaths.add(path.resolve(filePath));
+      return serverInfo.registerMediaPath(filePath);
+    });
+    handle('media:cancel-stream', (sessionId) => projectStore.cancelAsset(sessionId));
     handle('media:choose-replacement', async (name) => {
       const result = await dialog.showOpenDialog({
         title: `Locate ${String(name || 'media file')}`,
@@ -228,7 +253,7 @@ async function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     return isTrustedRenderer(webContents) && ['media', 'display-capture'].includes(permission);
   });
@@ -254,6 +279,7 @@ app.on('window-all-closed', () => {
   Promise.allSettled([
     stopRecordingFromMain(),
     Promise.resolve(serverInfo?.exportSessions?.cancelAll()),
+    Promise.resolve(projectStore?.cancelAllAssets()),
   ]).finally(() => app.quit());
 });
 

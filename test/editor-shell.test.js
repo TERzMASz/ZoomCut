@@ -16,7 +16,11 @@ test('editor shell keeps one instance of every DOM id', () => {
 test('editor shell assets and primary work areas are packaged by index', () => {
   assert.match(html, /shared\/editor-shell\.css/);
   assert.match(html, /shared\/lucide\.min\.js/);
+  assert.match(html, /shared\/editor-app\.js/);
   assert.match(html, /shared\/editor-shell\.js/);
+  assert.doesNotMatch(html, /<script>(?:.|\n)*?<\/script>/);
+  assert.match(html, /script-src 'self'/);
+  assert.doesNotMatch(html, /script-src[^;]*unsafe-inline/);
 
   for (const id of [
     'editorShell',
