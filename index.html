@@ -4623,7 +4623,7 @@ $('exportBtn').onclick = async () => {
 
 // ---------- อัดหน้าจอ iPhone จากปุ่มในแอป (ผ่าน serve.py) ----------
 const recBtn = $('recBtn');
-let recState = { recording: false, poller: null };
+let recState = { recording: false, poller: null, polling: false };
 
 function setRecordingHud(mode, { elapsed = 0, clicks = 0 } = {}) {
   const hud = $('recordingHud');
@@ -4801,11 +4801,21 @@ recBtn.onclick = async () => {
       elapsed: Number($('recordingHud').dataset.elapsed) || 0,
       clicks: Number($('recordingHud').dataset.clicks) || 0,
     });
-    await api('/api/record/stop', { method: 'POST' });
+    try {
+      if (desktop?.system?.stopRecording) await desktop.system.stopRecording();
+      else await api('/api/record/stop', { method: 'POST' });
+    } catch {
+      await api('/api/record/stop', { method: 'POST' }).catch(() => {});
+    }
+    pollRecState();
     return;
   }
   openSourcePicker();
 };
+
+desktop?.system?.onRecordingStopped?.(() => {
+  if (recState.recording) pollRecState();
+});
 
 async function startSmartRecording() {
   if (recState.recording) {
@@ -4966,6 +4976,13 @@ async function startRecording(target) {
 }
 
 async function pollRecState() {
+  if (recState.polling) return;
+  recState.polling = true;
+  try { await pollRecStateOnce(); }
+  finally { recState.polling = false; }
+}
+
+async function pollRecStateOnce() {
   let ok, data;
   try { ({ ok, data } = await api('/api/record/state', {}, 5000)); }
   catch { return; }

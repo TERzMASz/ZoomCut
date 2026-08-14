@@ -52,6 +52,14 @@ done
 chmod 755 "$DEST/adb" "$DEST/scrcpy"
 chmod 644 "$DEST/scrcpy-server" "$DEST"/*.png 2>/dev/null || true
 
+# Copying signed tools out of the verified archive can attach macOS provenance
+# metadata and make Gatekeeper kill them before the app bundle is signed.
+for executable in "$DEST/adb" "$DEST/scrcpy"; do
+  xattr -d com.apple.quarantine "$executable" 2>/dev/null || true
+  xattr -d com.apple.provenance "$executable" 2>/dev/null || true
+  codesign --force --sign - "$executable" >/dev/null
+done
+
 "$DEST/adb" version >/dev/null
 "$DEST/scrcpy" --version >/dev/null
 echo "Staged official scrcpy $VERSION portable runtime for $PLATFORM (SHA-256 verified)"

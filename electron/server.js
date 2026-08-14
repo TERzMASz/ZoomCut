@@ -209,7 +209,7 @@ async function androidTouchDevice(serial) {
   return null;
 }
 async function diagnostics() {
-  const hook = loadUiohook();
+  const hookAvailable = inputHookAvailable();
   const [ffmpeg, ffprobe, adb, scrcpy, osascript, displays, windows, androidDevices] = await Promise.all([
     binStatus('ffmpeg', FFMPEG),
     binStatus('ffprobe', FFPROBE),
@@ -241,9 +241,9 @@ async function diagnostics() {
     debugLog: DEBUG_LOG,
     bins: { ffmpeg, ffprobe, adb, scrcpy, scrcpyServer, screencapture, osascript },
     uiohook: {
-      ok: hook !== false,
+      ok: hookAvailable,
       running: rec.hookRunning,
-      detail: hook === false ? 'โหลด uiohook-napi ไม่ได้ — อัดวิดีโอได้ แต่อาจไม่มี auto zoom จากคลิก' : 'พร้อมจับคลิกเมื่อเริ่มอัด',
+      detail: !hookAvailable ? 'โหลด uiohook-napi ไม่ได้ — อัดวิดีโอได้ แต่อาจไม่มี auto zoom จากคลิก' : 'พร้อมจับคลิกผ่าน worker แยกเมื่อเริ่มอัด',
     },
     permissions: {
       screenRecording: process.platform === 'darwin' ? 'macOS จะยืนยันตอนเริ่มอัดจริง' : 'not_applicable',
@@ -260,27 +260,27 @@ async function diagnostics() {
 }
 
 // ---------- optional global input hook (จับคลิกทั้งจอ) ----------
-// โหลดแบบ lazy + optional: ถ้า native module ยังไม่พร้อม อัดวิดีโอได้แต่ไม่มี auto-zoom
-let uio = null;
-function loadUiohook() {
-  if (uio !== null) return uio;
-  try { uio = require('uiohook-napi'); } catch { uio = false; }
-  return uio;
+// Native hook อยู่ใน worker แยก เพื่อไม่ให้ Electron main/API ค้างตามหาก hook มีปัญหา
+const INPUT_HOOK_WORKER = path.join(__dirname, 'input-hook-worker.js');
+function inputHookAvailable() {
+  try { require.resolve('uiohook-napi'); return true; } catch { return false; }
 }
 
 // ---------- recording state ----------
 const rec = {
   active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-  proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
+  proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
+  boundsRefreshRunning: false,
   androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
   finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '',
 };
 
 function resetRec() {
   Object.assign(rec, { active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-    proc: null, touchProc: null, mirrorProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null,
+    proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null,
+    boundsRefreshRunning: false,
     androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
-    finished: false, error: null, capStderr: '', ffmpegError: '' });
+    finished: false, error: null, hookRunning: false, capStderr: '', ffmpegError: '' });
 }
 
 async function startRecording(recordingsDir, opts) {
@@ -363,12 +363,17 @@ async function startRecording(recordingsDir, opts) {
   // โหมดทั้งจอ: bounds คงที่ ไม่ต้องรีเฟรช
   if (rec.mode === 'window') {
     rec.boundsTimer = setInterval(async () => {
-      if (!rec.active) return;
-      const b = await findWindowById(rec.wid);
-      if (b) rec.bounds = b;
-      const wins = await jxaListWindows();
-      if (rec.ownerPid && !appHasWindows(wins, rec.ownerPid)) stopRecording().catch(() => {});
-    }, 400);
+      if (!rec.active || rec.boundsRefreshRunning) return;
+      rec.boundsRefreshRunning = true;
+      try {
+        const wins = await jxaListWindows();
+        const tracked = wins.find(window => window.id === rec.wid);
+        if (tracked?.bounds) rec.bounds = tracked.bounds;
+        if (rec.ownerPid && !appHasWindows(wins, rec.ownerPid)) stopRecording().catch(() => {});
+      } finally {
+        rec.boundsRefreshRunning = false;
+      }
+    }, 750);
   }
 
   return { base: path.basename(base) };
@@ -441,45 +446,74 @@ function startAndroidTouchTracking(serial, touch) {
 }
 
 function startInputHook() {
-  const hook = loadUiohook();
-  if (!hook || rec.hookRunning) {
-    if (!hook) dbg('uiohook-napi unavailable: click tracking disabled');
+  if (!inputHookAvailable() || rec.hookProc) {
+    if (!inputHookAvailable()) dbg('uiohook-napi unavailable: click tracking disabled');
     return;
   }
-  const { uIOhook } = hook;
-  const scale = 1; // uiohook คืนพิกัดเป็น screen points อยู่แล้ว
-  uIOhook.on('mousedown', (e) => {
-    if (!rec.active || rec.startedAt === null || !rec.bounds) return;
-    const b = rec.bounds;
-    const x = e.x, y = e.y;
-    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-      rec.clicks.push({ wall: Date.now(), x: (x - b.x) / b.w, y: (y - b.y) / b.h });
+  const proc = spawn(process.execPath, [INPUT_HOOK_WORKER], {
+    env: { ...CHILD_ENV, ELECTRON_RUN_AS_NODE: '1' },
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+  });
+  rec.hookProc = proc;
+  proc.on('message', message => {
+    if (message?.type === 'ready') {
+      rec.hookRunning = true;
+      dbg(`input hook worker ready pid=${proc.pid}`);
+      return;
+    }
+    if (message?.type === 'mousedown' && rec.active && rec.startedAt !== null && rec.bounds) {
+      const b = rec.bounds;
+      const x = message.x, y = message.y;
+      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+        rec.clicks.push({ wall: message.wall || Date.now(), x: (x - b.x) / b.w, y: (y - b.y) / b.h });
+      }
+      return;
+    }
+    if (message?.type === 'stop-request') stopRecording().catch(() => {});
+    if (message?.type === 'error') {
+      rec.trackingError = `Click tracking unavailable: ${message.error}`;
+      dbg(`input hook worker error: ${message.error}`);
     }
   });
-  // คีย์ลัดหยุดอัด ⌃⌘S
-  uIOhook.on('keydown', (e) => {
-    if (!rec.active) return;
-    const KEY_S = 31; // uiohook keycode ของ S
-    if (e.keycode === KEY_S && e.ctrlKey && e.metaKey) stopRecording().catch(() => {});
+  proc.stderr.on('data', chunk => dbg(`input hook worker stderr: ${String(chunk).trim()}`));
+  proc.on('error', error => {
+    rec.trackingError = `Click tracking worker failed: ${error.message}`;
+    dbg(rec.trackingError);
   });
-  try { uIOhook.start(); rec.hookRunning = true; }
-  catch (e) {
+  proc.on('exit', (code, signal) => {
+    if (rec.hookProc !== proc) return;
+    rec.hookProc = null;
     rec.hookRunning = false;
-    dbg(`uiohook start failed: ${e.message}`);
-  }
+    if (rec.active && code !== 0) rec.trackingError = `Click tracking worker stopped (${signal || code})`;
+    dbg(`input hook worker exit code=${code} signal=${signal || ''}`);
+  });
 }
 function stopInputHook() {
-  const hook = loadUiohook();
-  if (hook && rec.hookRunning) { try { hook.uIOhook.stop(); } catch {} rec.hookRunning = false; }
+  const proc = rec.hookProc;
+  rec.hookProc = null;
+  rec.hookRunning = false;
+  if (!proc || proc.exitCode !== null) return;
+  try { proc.send({ type: 'stop' }); } catch {}
+  const term = setTimeout(() => { try { proc.kill('SIGTERM'); } catch {} }, 250);
+  const force = setTimeout(() => { if (proc.exitCode === null) try { proc.kill('SIGKILL'); } catch {} }, 1500);
+  term.unref?.(); force.unref?.();
 }
 
 async function stopRecording() {
-  if (!rec.active) return;
+  if (!rec.active) {
+    dbg('record/stop ignored (not active)');
+    return;
+  }
+  dbg(`record/stop requested mode=${rec.mode || 'mac'} elapsedMs=${rec.startedAt ? Date.now() - rec.startedAt : 0}`);
   rec.active = false;
   rec.processing = true; // หยุดอัดแล้ว แต่ยังแปลงไฟล์อยู่ (frontend รอต่อ ไม่หยุด poll)
   clearInterval(rec.boundsTimer);
   stopInputHook();
-  if (rec.mode === 'android') return stopAndroidRecording();
+  if (rec.mode === 'android') {
+    await stopAndroidRecording();
+    dbg(`record/stop finalized mode=android finished=${rec.finished} error=${JSON.stringify(rec.error || '')}`);
+    return;
+  }
   const stopWall = Date.now();
   const base = rec.base;
   const outMov = base + '.mov';
@@ -494,6 +528,7 @@ async function stopRecording() {
     rec.error = 'ไม่มีวิดีโอถูกบันทึก — เปิดสิทธิ์ Screen Recording ให้ ZoomCut แล้วปิด/เปิดแอปใหม่'
       + (rec.capStderr.trim() ? `\n\nรายละเอียดจากระบบ: ${rec.capStderr.trim()}` : '');
     rec.processing = false;
+    dbg(`record/stop failed before remux error=${JSON.stringify(rec.error)}`);
     return;
   }
   // แปลงเป็น mp4 (copy ถ้าเป็น h264, ไม่งั้น transcode)
@@ -509,6 +544,7 @@ async function stopRecording() {
     rec.error = 'แปลงไฟล์วิดีโอไม่สำเร็จ — ตรวจว่า ffmpeg พร้อมใช้งาน'
       + (rec.ffmpegError ? `\n\nรายละเอียดจาก ffmpeg: ${rec.ffmpegError}` : '');
     rec.processing = false;
+    dbg(`record/stop failed during remux error=${JSON.stringify(rec.error)}`);
     return;
   }
   try { fs.unlinkSync(outMov); } catch {}
@@ -527,6 +563,7 @@ async function stopRecording() {
   rec.finished = true;
   rec.processing = false;
   rec.clicks = clicks;
+  dbg(`record/stop finalized mode=mac duration=${dur || 0} clicks=${clicks.length}`);
 }
 
 async function stopAndroidRecording() {
@@ -581,11 +618,11 @@ function recordState() {
     clicks: rec.clicks.length,
     finished: rec.finished,
     error: rec.error,
-    hasClickTracking: loadUiohook() !== false,
+    hasClickTracking: inputHookAvailable(),
     hookRunning: rec.hookRunning,
     debugLog: DEBUG_LOG,
     androidConnected: rec.mode === 'android' ? rec.androidConnected : undefined,
-    trackingError: rec.mode === 'android' ? rec.trackingError : undefined,
+    trackingError: rec.trackingError || undefined,
   };
 }
 

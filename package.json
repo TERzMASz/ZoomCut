@@ -14,7 +14,7 @@
     "stage:runtime-tools": "bash scripts/stage-runtime-tools.sh",
     "test": "node --test test/*.test.js",
     "test:security": "node --test test/security.test.js",
-    "qa": "npm test && node --check electron/main.js && node --check electron/server.js && node --check electron/preload.js && node --check electron/export-session.js && node --check electron/android-tracking.js && node --check shared/editor-shell.js"
+    "qa": "npm test && node --check electron/main.js && node --check electron/server.js && node --check electron/preload.js && node --check electron/export-session.js && node --check electron/android-tracking.js && node --check electron/input-hook-worker.js && node --check shared/editor-shell.js"
   },
   "build": {
     "appId": "com.zoomcut.app",

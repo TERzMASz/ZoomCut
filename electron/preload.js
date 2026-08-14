@@ -36,5 +36,11 @@ contextBridge.exposeInMainWorld('zoomcutDesktop', {
     requestMediaAccess: (kind) => ipcRenderer.invoke('system:request-media-access', kind),
     openPrivacy: (pane) => ipcRenderer.invoke('system:open-privacy', pane),
     recordingIndicator: (active) => ipcRenderer.invoke('system:recording-indicator', Boolean(active)),
+    stopRecording: () => ipcRenderer.invoke('system:stop-recording'),
+    onRecordingStopped: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('recording:stopped', listener);
+      return () => ipcRenderer.removeListener('recording:stopped', listener);
+    },
   },
 });

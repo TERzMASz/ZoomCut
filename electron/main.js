@@ -1,10 +1,10 @@
 // ZoomCut Electron — main process
 // เปิด HTTP server ในตัว (server.js) แล้วโหลด index.html ผ่าน localhost
 // ทำให้ renderer (ตัวแก้ไข) ใช้โค้ดเดิมได้ทั้งดุ้น ไม่ต้องแก้
-const { app, BrowserWindow, shell, systemPreferences, dialog, ipcMain, session, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, shell, systemPreferences, dialog, ipcMain, session, Tray, Menu, nativeImage, globalShortcut } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const { startServer, stopRecording } = require('./server');
+const { startServer, stopRecording, recordState } = require('./server');
 const { createProjectStore } = require('./project-store');
 
 let mainWindow = null;
@@ -13,6 +13,8 @@ let projectStore = null;
 let ipcReady = false;
 let recordingTray = null;
 let recordingTrayTimer = null;
+let nativeStopPromise = null;
+const RECORDING_SHORTCUT = process.platform === 'darwin' ? 'Control+Command+S' : 'Control+Shift+S';
 const authorizedMediaPaths = new Set();
 
 function authorizeProjectMedia(result) {
@@ -22,15 +24,33 @@ function authorizeProjectMedia(result) {
   return result;
 }
 
+async function stopRecordingFromMain() {
+  if (nativeStopPromise) return nativeStopPromise;
+  clearInterval(recordingTrayTimer);
+  recordingTrayTimer = null;
+  recordingTray?.setTitle('● Finishing…');
+  recordingTray?.setToolTip('ZoomCut is finishing the recording');
+  nativeStopPromise = Promise.resolve(stopRecording())
+    .catch(error => console.error('[ZoomCut] Stop recording failed:', error))
+    .finally(() => {
+      nativeStopPromise = null;
+      showRecordingIndicator(false);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('recording:stopped');
+    });
+  return nativeStopPromise;
+}
+
 function showRecordingIndicator(active) {
   if (!active) {
     clearInterval(recordingTrayTimer);
     recordingTrayTimer = null;
     if (recordingTray) recordingTray.destroy();
     recordingTray = null;
+    if (globalShortcut.isRegistered(RECORDING_SHORTCUT)) globalShortcut.unregister(RECORDING_SHORTCUT);
     return;
   }
   if (recordingTray) return;
+  globalShortcut.register(RECORDING_SHORTCUT, () => { stopRecordingFromMain(); });
   recordingTray = new Tray(nativeImage.createEmpty());
   const startedAt = Date.now();
   const refresh = () => {
@@ -39,7 +59,7 @@ function showRecordingIndicator(active) {
   };
   recordingTray.setToolTip('ZoomCut is recording');
   recordingTray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Stop Recording', click: () => stopRecording().catch(() => {}) },
+    { label: 'Stop Recording', click: () => { stopRecordingFromMain(); } },
     { label: 'Show ZoomCut', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
   ]));
   refresh();
@@ -80,6 +100,7 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: false,
       preload: path.join(__dirname, 'preload.js'),
     },
   });
@@ -186,9 +207,24 @@ async function createWindow() {
       return shell.openExternal(`x-apple.systempreferences:com.apple.preference.security?${page}`);
     });
     handle('system:recording-indicator', (active) => { showRecordingIndicator(active); return { ok: true }; });
+    handle('system:stop-recording', () => stopRecordingFromMain().then(() => ({ ok: true })));
   }
 
   mainWindow.loadURL(`http://127.0.0.1:${serverInfo.port}/?token=${serverInfo.apiToken}`);
+  mainWindow.on('unresponsive', () => {
+    const recording = recordState();
+    if (!recording.running && !recording.processing) return;
+    dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      title: 'ZoomCut is not responding',
+      message: 'The editor is not responding while a screen recording is active.',
+      detail: 'You can stop safely from this native dialog. ZoomCut will finish and preserve the recording.',
+      buttons: ['Stop Recording', 'Keep Waiting'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    }).then(({ response }) => { if (response === 0) stopRecordingFromMain(); });
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -215,6 +251,10 @@ app.whenReady().then(async () => {
 // ปิดแอปจริงเมื่อปิดหน้าต่าง (รวม macOS ด้วย) — เพื่อให้เปิดใหม่แล้วอ่านสิทธิ์ล่าสุด
 // ไม่งั้นโปรเซสค้างด้วยสถานะสิทธิ์เดิม ทำให้ "ให้สิทธิ์แล้วแต่ยังอัดไม่ได้"
 app.on('window-all-closed', () => {
-  showRecordingIndicator(false);
-  Promise.resolve(serverInfo?.exportSessions?.cancelAll()).finally(() => app.quit());
+  Promise.allSettled([
+    stopRecordingFromMain(),
+    Promise.resolve(serverInfo?.exportSessions?.cancelAll()),
+  ]).finally(() => app.quit());
 });
+
+app.on('will-quit', () => globalShortcut.unregisterAll());
