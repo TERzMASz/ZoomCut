@@ -24,8 +24,10 @@ function runInputHookWorker({ hook, transport = process, exit = code => process.
   transport.on('message', message => { if (message?.type === 'stop') stop(); });
   transport.on('disconnect', stop);
 
-  send({ type: 'ready' });
-  try { hook.start(); }
+  try {
+    hook.start();
+    send({ type: 'ready' });
+  }
   catch (error) {
     send({ type: 'error', error: String(error.message || error) });
     setImmediate(() => exit(1));

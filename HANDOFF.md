@@ -31,6 +31,7 @@ shared/lucide.min.js  ← icon runtime ที่ bundle ในแอป (ไม�
 electron/
   main.js             ← Electron main: เปิด server ในตัว + สร้างหน้าต่าง โหลด http://127.0.0.1:<port>
   server.js           ← HTTP server + ตรรกะอัดจอ (พอร์ตจาก record.py/serve.py มาเป็น Node)
+  entry.js            ← เลือกเปิดแอปปกติหรือ signed input-hook subprocess ตาม internal flag
   input-hook-worker.js← แยก uiohook ออกจาก main process เพื่อให้ Stop/API/Tray ยังตอบสนองเมื่อ native hook มีปัญหา
   preload.js          ← bridge แบบจำกัดสำหรับ project/media/export/system permission
   project-store.js    ← save/open/autosave/recovery + content-addressed assets
@@ -168,7 +169,7 @@ renderer เรียก `api('/api/...')` = `fetch` ธรรมดา. ปุ�
 7. **Electron ไม่ปิดจริงตอนปิดหน้าต่าง** — `window-all-closed → app.quit()` เพื่อให้เปิดใหม่อ่านสิทธิ์ล่าสุด
 8. **tab ที่ถูกพักเบื้องหลัง rAF หยุด** — export/segment ใช้ setInterval เป็น backup ของ rAF; และ tab hidden ทำ automated test เพี้ยน (เวลา/เฟรม) — เทสต์ playback/export ต้องระวังจุดนี้
 9. **window shadow ทำให้ click coordinate เพี้ยน** — `CGWindowBounds` ไม่รวมเงา แต่ `screencapture -l` รวมเงาโดย default จึงต้องใช้ `-o`; บน Retina ขนาดวิดีโอควรเป็น bounds คูณ backing scale โดยไม่มี margin รอบภาพ
-10. **ห้ามรัน uiohook ใน Electron main** — native hook เคยทำ main process, localhost API และปุ่ม Stop ค้างพร้อมกันเมื่อกลับเข้าแอป; ต้องรันผ่าน `input-hook-worker.js` เท่านั้น และให้ main process ถือ native shortcut/Tray stop เป็น fallback
+10. **ห้ามรัน uiohook ใน Electron main** — native hook เคยทำ main process, localhost API และปุ่ม Stop ค้างพร้อมกันเมื่อกลับเข้าแอป; ต้องรันผ่าน signed ZoomCut subprocess ที่ `entry.js` ส่งต่อให้ `input-hook-worker.js` เท่านั้น และให้ main process ถือ native shortcut/Tray stop เป็น fallback ห้ามย้อนกลับไปใช้ `ELECTRON_RUN_AS_NODE` (ถูกปิดด้วย security fuse) หรือ `utilityProcess` (macOS แยก Input Monitoring permission ไปอยู่ที่ Helper identity)
 
 ---
 

@@ -450,13 +450,28 @@ function startInputHook() {
     if (!inputHookAvailable()) dbg('uiohook-napi unavailable: click tracking disabled');
     return;
   }
-  const proc = spawn(process.execPath, [INPUT_HOOK_WORKER], {
-    env: { ...CHILD_ENV, ELECTRON_RUN_AS_NODE: '1' },
+  let workerArgs = [INPUT_HOOK_WORKER];
+  if (process.versions.electron) {
+    const { app } = require('electron');
+    workerArgs = process.defaultApp
+      ? [app.getAppPath(), '--zoomcut-input-hook-worker']
+      : ['--zoomcut-input-hook-worker'];
+  }
+  const proc = spawn(process.execPath, workerArgs, {
+    env: CHILD_ENV,
     stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
   });
-  rec.hookProc = proc;
+  const handle = { proc, exited: false, readyTimer: null };
+  rec.hookProc = handle;
+  handle.readyTimer = setTimeout(() => {
+    if (rec.hookProc !== handle || rec.hookRunning) return;
+    rec.trackingError = 'Click tracking worker did not become ready';
+    dbg('input hook worker ready timeout');
+  }, 4000);
+  handle.readyTimer.unref?.();
   proc.on('message', message => {
     if (message?.type === 'ready') {
+      clearTimeout(handle.readyTimer);
       rec.hookRunning = true;
       dbg(`input hook worker ready pid=${proc.pid}`);
       return;
@@ -475,13 +490,15 @@ function startInputHook() {
       dbg(`input hook worker error: ${message.error}`);
     }
   });
-  proc.stderr.on('data', chunk => dbg(`input hook worker stderr: ${String(chunk).trim()}`));
+  proc.stderr?.on('data', chunk => dbg(`input hook worker stderr: ${String(chunk).trim()}`));
   proc.on('error', error => {
     rec.trackingError = `Click tracking worker failed: ${error.message}`;
     dbg(rec.trackingError);
   });
   proc.on('exit', (code, signal) => {
-    if (rec.hookProc !== proc) return;
+    handle.exited = true;
+    clearTimeout(handle.readyTimer);
+    if (rec.hookProc !== handle) return;
     rec.hookProc = null;
     rec.hookRunning = false;
     if (rec.active && code !== 0) rec.trackingError = `Click tracking worker stopped (${signal || code})`;
@@ -489,13 +506,21 @@ function startInputHook() {
   });
 }
 function stopInputHook() {
-  const proc = rec.hookProc;
+  const handle = rec.hookProc;
   rec.hookProc = null;
   rec.hookRunning = false;
-  if (!proc || proc.exitCode !== null) return;
+  if (!handle || handle.exited) return;
+  clearTimeout(handle.readyTimer);
+  const { proc } = handle;
   try { proc.send({ type: 'stop' }); } catch {}
-  const term = setTimeout(() => { try { proc.kill('SIGTERM'); } catch {} }, 250);
-  const force = setTimeout(() => { if (proc.exitCode === null) try { proc.kill('SIGKILL'); } catch {} }, 1500);
+  const term = setTimeout(() => {
+    if (handle.exited) return;
+    try { proc.kill('SIGTERM'); } catch {}
+  }, 250);
+  const force = setTimeout(() => {
+    if (handle.exited) return;
+    try { proc.kill('SIGKILL'); } catch {}
+  }, 1500);
   term.unref?.(); force.unref?.();
 }
 
