@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const app = fs.readFileSync(path.join(root, 'shared/editor-app.js'), 'utf8');
 const shell = fs.readFileSync(path.join(root, 'shared/editor-shell.js'), 'utf8');
 
 test('editor shell keeps one instance of every DOM id', () => {
@@ -61,4 +62,17 @@ test('inspector foundation exposes reusable, keyboard-friendly primitives', () =
   assert.match(html, /id="cropReset"[^>]*type="button"|type="button"[^>]*id="cropReset"/);
   assert.match(shell, /setAttribute\('aria-label'/);
   assert.match(shell, /shellKeyboardReady/);
+});
+
+test('M3 inspectors expose cursor controls and honest background persistence affordances', () => {
+  for (const id of ['bgTypeRow', 'bgColor', 'bgBlur', 'frameReset', 'cursorStyleRow', 'cursorEffectRow', 'cursorSmoothing', 'cursorReset', 'bgPersistenceNote']) {
+    assert.match(html, new RegExp(`\\bid=["']${id}["']`), `missing #${id}`);
+  }
+  assert.match(html, /data-bg-type="video"[^>]*disabled/);
+  assert.match(html, /id="cursorStyleRow"[^>]*role="radiogroup"/);
+  assert.match(html, /id="cursorEffectRow"[^>]*role="radiogroup"/);
+  assert.match(html, /id="bgGrid"[^>]*role="radiogroup"/);
+  assert.match(html, /รูปพื้นหลังจากไฟล์ใช้ชั่วคราว/);
+  assert.match(app, /document\.createElement\('button'\)[\s\S]*setAttribute\('role', 'radio'\)/);
+  assert.match(shell, /filter\(option => !option\.disabled/);
 });

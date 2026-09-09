@@ -121,6 +121,54 @@ test('timeline snapping chooses nearest candidate only inside threshold', () => 
   assert.equal(core.snapTime(4.7, [0, 5, 10], 0.1), 4.7);
 });
 
+test('cursorAt interpolates with clamped normalized coordinates deterministically', () => {
+  const points = [{ t: 0, x: -1, y: 0 }, { t: 1, x: 1, y: 2 }];
+  assert.deepEqual(core.cursorAt(points, -1, 0), { x: 0, y: 0, opacity: 1 });
+  assert.deepEqual(core.cursorAt(points, 0.5, 0), { x: 0.5, y: 0.5, opacity: 1 });
+  assert.deepEqual(core.cursorAt(points, 2, 0), { x: 1, y: 1, opacity: 0 });
+  assert.deepEqual(core.cursorAt(points, 0.5, 0), core.cursorAt(points, 0.5, 0));
+});
+
+test('cursorAt holds and fades across long sample gaps without jumping', () => {
+  const points = [{ t: 0, x: 0.2, y: 0.3 }, { t: 2, x: 0.8, y: 0.7 }];
+  assert.deepEqual(core.cursorAt(points, 0.4), { x: 0.2, y: 0.3, opacity: 1 });
+  const fading = core.cursorAt(points, 0.6);
+  assert.equal(fading.x, 0.2);
+  assert.equal(fading.y, 0.3);
+  assert.ok(fading.opacity < 1 && fading.opacity > 0);
+});
+
+test('cursorAt reuses sanitized samples for an immutable cursor timeline', () => {
+  let reads = 0;
+  const sample = (t, x, y) => ({
+    get t() { reads += 1; return t; },
+    get x() { reads += 1; return x; },
+    get y() { reads += 1; return y; },
+  });
+  const points = [sample(0, 0.1, 0.2), sample(1, 0.8, 0.9)];
+  assert.ok(core.cursorAt(points, 0.25));
+  const readsAfterFirstLookup = reads;
+  assert.ok(readsAfterFirstLookup > 0);
+  assert.ok(core.cursorAt(points, 0.75));
+  assert.equal(reads, readsAfterFirstLookup);
+});
+
+test('cursor, background, and frame inspector state round-trips through project persistence', () => {
+  const project = core.createProject({
+    mode: 'video', baseMedia: { sourcePath: '/tmp/base.mp4' }, segments: [{ start: 0, end: 1 }],
+    cursorSettings: { style: 'pointer', smoothing: .25, clickEffect: 'target', clickBounce: 1.5 },
+    cursorPoints: [{ t: .2, x: .4, y: .6 }],
+    background: { type: 'color', color: '#102030', blur: 8 },
+    frameStyle: { type: 'browser', padding: 12, radius: 9, shadow: 77 },
+  });
+  assert.equal(project.settings.cursorSettings.style, 'pointer');
+  assert.equal(project.settings.cursorSettings.clickEffect, 'target');
+  assert.deepEqual(project.state.cursorPoints, [{ t: .2, x: .4, y: .6 }]);
+  assert.deepEqual(project.settings.background, { type: 'color', value: 0, colors: [], blur: 8, color: '#102030' });
+  assert.deepEqual(project.settings.frameStyle, { type: 'browser', padding: 12, radius: 9, shadow: 77 });
+  assert.equal(core.validateProject(project).settings.cursorSettings.smoothing, .25);
+});
+
 test('project validation strips dangerous keys and rebuilds media authorization data', () => {
   const project = JSON.parse('{"format":"zoomcut-project","version":1,"baseMedia":{"sourcePath":"/tmp/base.mp4"},"settings":{"aspect":"16:9","constructor":{"polluted":true}},"state":{"segments":[{"start":0,"end":1,"speed":1}],"videoClips":[],"voiceovers":[],"facecams":[],"events":[],"taps":[]},"mediaPaths":[{"path":"/etc/passwd"}]}');
   core.validateProject(project);

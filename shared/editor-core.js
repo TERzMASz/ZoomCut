@@ -39,6 +39,11 @@
     bounceDurationMs: 350,
     sway: 0,
   });
+  // Cursor timelines are replaced as a unit by capture/import/project restore.
+  // Cache their sanitized ordering so preview and offline export do not rebuild
+  // and sort as many as 50,000 samples on every rendered frame. WeakMap keeps
+  // the cache tied to the timeline lifetime rather than retaining projects.
+  const cursorSampleCache = new WeakMap();
 
   function finite(value, fallback = 0) {
     const number = Number(value);
@@ -83,7 +88,9 @@
     const colors = Array.isArray(input.colors)
       ? input.colors.slice(0, 4).filter(color => typeof color === 'string' && color.length <= 64)
       : [];
-    return { type, value: safeValue, colors, blur: clampNumber(input.blur, 0, 100, 0) };
+    const out = { type, value: safeValue, colors, blur: clampNumber(input.blur, 0, 100, 0) };
+    if (typeof input.color === 'string' && input.color.length <= 64) out.color = input.color;
+    return out;
   }
 
   function defaultFrameStyle(value, legacy = {}) {
@@ -229,6 +236,7 @@
 
   function validateCursorPoints(value) {
     requireArray(value, 'cursorPoints', MAX_CURSOR_POINTS);
+    cursorSampleCache.delete(value);
     for (const point of value) {
       if (!point || typeof point !== 'object' || Array.isArray(point)) throw new Error('cursorPoints contains an invalid point');
       point.t = Math.max(0, finite(point.t));
@@ -339,8 +347,67 @@
     return best;
   }
 
+  // Resolve a normalized cursor sample at a source time without mutating the
+  // recording.  Recorders can pause while the OS is busy, so a large sample
+  // gap is treated as a held cursor followed by a short fade instead of an
+  // implausibly fast diagonal jump.  The binary search keeps preview/export
+  // deterministic and bounded for long recordings.
+  function cursorAt(points, sourceTime, smoothing = 0.65) {
+    if (!Array.isArray(points)) return null;
+    let samples = cursorSampleCache.get(points);
+    if (!samples) {
+      samples = points
+        .map((point, index) => ({
+          t: finite(point?.t, NaN),
+          x: clampNumber(point?.x, 0, 1, NaN),
+          y: clampNumber(point?.y, 0, 1, NaN),
+          index,
+        }))
+        .filter(point => Number.isFinite(point.t) && Number.isFinite(point.x) && Number.isFinite(point.y))
+        .sort((a, b) => a.t - b.t || a.index - b.index);
+      cursorSampleCache.set(points, samples);
+    }
+    if (!samples.length) return null;
+    const time = finite(sourceTime, samples[0].t);
+    const smooth = clampNumber(smoothing, 0, 1, 0.65);
+    const holdWindow = 0.5;
+    const fadeWindow = 0.42 + smooth * 0.18;
+    const point = (sample, opacity = 1) => ({
+      x: clampNumber(sample.x, 0, 1, 0),
+      y: clampNumber(sample.y, 0, 1, 0),
+      opacity: clampNumber(opacity, 0, 1, 0),
+    });
+    if (time <= samples[0].t) return point(samples[0]);
+    if (time >= samples[samples.length - 1].t) {
+      const last = samples[samples.length - 1];
+      const gap = time - last.t;
+      return point(last, gap <= holdWindow ? 1 : 1 - Math.min(1, (gap - holdWindow) / fadeWindow));
+    }
+    let lo = 0, hi = samples.length - 1;
+    while (lo + 1 < hi) {
+      const mid = (lo + hi) >> 1;
+      if (samples[mid].t <= time) lo = mid;
+      else hi = mid;
+    }
+    const a = samples[lo], b = samples[hi];
+    const span = Math.max(0, b.t - a.t);
+    if (!span) return point(b);
+    const gap = time - a.t;
+    if (span > 1.2) {
+      return point(a, gap <= holdWindow ? 1 : 1 - Math.min(1, (gap - holdWindow) / fadeWindow));
+    }
+    const raw = clampNumber(gap / span, 0, 1, 0);
+    const eased = raw * raw * (3 - 2 * raw);
+    const mix = raw + (eased - raw) * smooth;
+    return {
+      x: clampNumber(a.x + (b.x - a.x) * mix, 0, 1, 0),
+      y: clampNumber(a.y + (b.y - a.y) * mix, 0, 1, 0),
+      opacity: 1,
+    };
+  }
+
   return {
     PROJECT_VERSION, LEGACY_PROJECT_VERSION, SETTINGS_FIELDS, DEFAULT_CURSOR_SETTINGS,
-    plainClip, createProject, collectMediaPaths, migrateProject, validateProject, snapTime,
+    plainClip, createProject, collectMediaPaths, migrateProject, validateProject, snapTime, cursorAt,
   };
 });

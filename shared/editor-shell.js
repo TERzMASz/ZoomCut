@@ -150,7 +150,8 @@
       chip.addEventListener('keydown', (event) => {
         const group = chip.closest('.segmented-control');
         if (group && ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
-          const options = [...group.querySelectorAll('.chip')];
+          const options = [...group.querySelectorAll('.chip')]
+            .filter(option => !option.disabled && option.getAttribute('aria-disabled') !== 'true');
           const current = options.indexOf(chip);
           if (current >= 0) {
             const direction = (event.key === 'ArrowLeft' || event.key === 'ArrowUp') ? -1 : 1;

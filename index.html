@@ -159,7 +159,12 @@
   .slider-row input[type=range] { flex: 1; accent-color: var(--accent); }
   .slider-row .val { width: 34px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
   .bg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #bgTypeRow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #bgTypeRow .chip { min-width: 0; padding-inline: 2px; }
   .bg-swatch {
+    appearance: none;
+    min-width: 0;
+    padding: 0;
     aspect-ratio: 1;
     border-radius: 8px;
     cursor: pointer;
@@ -952,12 +957,25 @@
     </div>
 
     <h3 class="inspector-section-header" id="sectionBackground">พื้นหลัง</h3>
-    <div class="bg-grid" id="bgGrid"></div>
+    <div class="row segmented-control" id="bgTypeRow" role="radiogroup" aria-label="Background type">
+      <button type="button" class="chip active" data-bg-type="gradient">Gradient</button>
+      <button type="button" class="chip" data-bg-type="color">Color</button>
+      <button type="button" class="chip" data-bg-type="image">Image</button>
+      <button type="button" class="chip" data-bg-type="video" disabled title="Video background จะเปิดเมื่อมี media asset ที่รองรับ">Video</button>
+    </div>
+    <div class="bg-grid" id="bgGrid" role="radiogroup" aria-label="Background presets"></div>
     <div class="row" style="margin-top:8px; align-items:center">
+      <input type="color" id="bgColor" value="#151821" title="สีพื้นหลัง">
       <input type="color" id="cg1" value="#0ea5e9" title="gradient กำหนดเอง สี 1">
       <input type="color" id="cg2" value="#8b5cf6" title="gradient กำหนดเอง สี 2">
       <button type="button" class="chip" id="bgImageBtn" title="อัปโหลดรูปพื้นหลัง">🖼 รูป</button>
       <button type="button" class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</button>
+    </div>
+    <div class="tip" id="bgPersistenceNote">รูปพื้นหลังจากไฟล์ใช้ชั่วคราวใน session นี้ — ยังไม่ถูกฝังในไฟล์โปรเจกต์</div>
+    <div class="slider-row">
+      <label for="bgBlur">Blur</label>
+      <input type="range" id="bgBlur" min="0" max="40" value="0" step="1">
+      <span class="val" id="bgBlurVal">0</span>
     </div>
 
     <h3 class="inspector-section-header" id="sectionVideoFrame">เฟรมวิดีโอ</h3>
@@ -975,6 +993,9 @@
       <label>เงา</label>
       <input type="range" id="shadow" min="0" max="100" value="60">
       <span class="val" id="shadowVal">60</span>
+    </div>
+    <div class="row">
+      <button type="button" class="chip inspector-reset" id="frameReset">↺ ล้างเฟรม</button>
     </div>
 
     <h3 class="inspector-section-header" id="sectionCrop">ตัดขอบ (Crop)</h3>
@@ -1038,7 +1059,20 @@
     </div>
     <details class="inspector-advanced" id="advancedInspector">
       <summary><span data-shell-copy="advanced">ขั้นสูง</span><span class="advanced-meta">schema v2</span></summary>
-      <p data-shell-copy="advancedBody">การตั้งค่า cursor, shortcut และ annotation พร้อมสำหรับโปรเจกต์รุ่นถัดไป โดยยังไม่เปลี่ยนพฤติกรรมการเรนเดอร์เดิม</p>
+      <p data-shell-copy="advancedBody">ปรับ cursor, เอฟเฟกต์คลิก และเครื่องมือช่วยตรวจเฟรม</p>
+      <div class="advanced-controls" aria-label="Cursor settings">
+        <div class="row segmented-control" id="cursorStyleRow" role="radiogroup" aria-label="Cursor style">
+          <button type="button" class="chip active" data-cursor-style="soft">Soft</button><button type="button" class="chip" data-cursor-style="outline">Outline</button><button type="button" class="chip" data-cursor-style="classic">Classic</button><button type="button" class="chip" data-cursor-style="shadow">Shadow</button><button type="button" class="chip" data-cursor-style="solid">Solid</button><button type="button" class="chip" data-cursor-style="dot">Dot</button><button type="button" class="chip" data-cursor-style="pointer">Pointer</button>
+        </div>
+        <div class="row segmented-control" id="cursorEffectRow" role="radiogroup" aria-label="Cursor click effect">
+          <button type="button" class="chip active" data-cursor-effect="ripple">Ripple</button><button type="button" class="chip" data-cursor-effect="none">None</button><button type="button" class="chip" data-cursor-effect="ring">Ring</button><button type="button" class="chip" data-cursor-effect="pulse">Pulse</button><button type="button" class="chip" data-cursor-effect="target">Target</button>
+        </div>
+        <div class="slider-row"><label for="cursorSize">Cursor</label><input type="range" id="cursorSize" min="0.5" max="2.5" step="0.05" value="1"><span class="val" id="cursorSizeVal">1.0x</span></div>
+        <div class="slider-row"><label for="cursorSmoothing">Smooth</label><input type="range" id="cursorSmoothing" min="0" max="1" step="0.05" value="0.65"><span class="val" id="cursorSmoothingVal">65%</span></div>
+        <div class="slider-row"><label for="cursorBounce">Bounce</label><input type="range" id="cursorBounce" min="0" max="2" step="0.05" value="1"><span class="val" id="cursorBounceVal">1.0</span></div>
+        <div class="slider-row"><label for="cursorSway">Sway</label><input type="range" id="cursorSway" min="0" max="2" step="0.05" value="0"><span class="val" id="cursorSwayVal">0.0</span></div>
+        <div class="row"><button type="button" class="chip" id="cursorReset">↺ Reset cursor</button></div>
+      </div>
     </details>
   </div>
 

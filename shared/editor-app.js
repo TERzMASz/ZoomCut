@@ -22,6 +22,7 @@ const state = {
   bg: 0,
   bgType: 'preset', // 'preset' | 'custom' | 'image' | 'transparent'
   bgImageEl: null,
+  bgColor: '#151821',
   padding: 0,      // % of min canvas dimension
   radius: 3,       // % of min canvas dimension
   shadow: 60,
@@ -38,7 +39,7 @@ const state = {
   annotations: [],
   annotationLaneCount: 1,
   shortcuts: {},
-  background: { type: 'preset', value: 0, colors: [], blur: 0 },
+  background: { type: 'preset', value: 0, colors: [], blur: 0, color: '#151821' },
   frameStyle: { type: 'none', padding: 0, radius: 3, shadow: 60 },
   debugOverlay: false,
   taps: [],        // {t, x, y} จาก clicks.json — ใช้วาด ripple
@@ -525,6 +526,13 @@ function applyLanguage() {
     if (label) label.textContent = tr(key) + ' ';
   }
   $('urlText').placeholder = 'yourwebsite.com';
+  const cursorLabels = state.lang === 'th'
+    ? { gradient: 'ไล่สี', color: 'สี', image: 'รูป', video: 'วิดีโอ', soft: 'นุ่ม', outline: 'เส้นขอบ', classic: 'คลาสสิก', shadow: 'เงา', solid: 'ทึบ', dot: 'จุด', pointer: 'ตัวชี้', ripple: 'ระลอก', none: 'ปิด', ring: 'วงแหวน', pulse: 'พัลส์', target: 'เป้า', reset: '↺ ล้าง cursor' }
+    : { gradient: 'Gradient', color: 'Color', image: 'Image', video: 'Video', soft: 'Soft', outline: 'Outline', classic: 'Classic', shadow: 'Shadow', solid: 'Solid', dot: 'Dot', pointer: 'Pointer', ripple: 'Ripple', none: 'None', ring: 'Ring', pulse: 'Pulse', target: 'Target', reset: '↺ Reset cursor' };
+  document.querySelectorAll('#bgTypeRow [data-bg-type]').forEach(button => { if (cursorLabels[button.dataset.bgType]) button.textContent = cursorLabels[button.dataset.bgType]; });
+  document.querySelectorAll('#cursorStyleRow [data-cursor-style], #cursorEffectRow [data-cursor-effect]').forEach(button => { const key = button.dataset.cursorStyle || button.dataset.cursorEffect; if (cursorLabels[key]) button.textContent = cursorLabels[key]; });
+  $('cursorReset').textContent = cursorLabels.reset;
+  syncBgActive();
   updateTimelineUI();
   updateSegUI();
   updateVoiceUI();
@@ -551,36 +559,72 @@ const BACKGROUNDS = [
 // ---------- Background swatches ----------
 const bgGrid = $('bgGrid');
 BACKGROUNDS.forEach((g, i) => {
-  const d = document.createElement('div');
+  const d = document.createElement('button');
+  d.type = 'button';
   d.className = 'bg-swatch' + (i === state.bg ? ' active' : '');
+  d.setAttribute('role', 'radio');
+  d.setAttribute('aria-checked', i === state.bg ? 'true' : 'false');
+  d.tabIndex = i === state.bg ? 0 : -1;
   d.style.background = `linear-gradient(135deg, ${g[0]}, ${g[1]})`;
   d.onclick = () => {
     state.bg = i;
     state.bgType = 'preset';
+    state.background = { ...state.background, type: 'gradient', value: i, colors: g.slice(), color: state.bgColor };
     syncBgActive();
     requestRender();
+    markProjectDirty();
   };
   bgGrid.appendChild(d);
 });
+bgGrid.addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) return;
+  const options = [...bgGrid.querySelectorAll('.bg-swatch')];
+  const current = options.indexOf(document.activeElement);
+  if (current < 0) return;
+  const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+  const next = options[(current + direction + options.length) % options.length];
+  event.preventDefault();
+  next.click();
+  next.focus();
+});
 
 function syncBgActive() {
-  bgGrid.querySelectorAll('.bg-swatch').forEach((el, j) =>
-    el.classList.toggle('active', state.bgType === 'preset' && j === state.bg));
+  bgGrid.querySelectorAll('.bg-swatch').forEach((el, j) => {
+    const active = (state.bgType === 'preset' || state.bgType === 'gradient' || state.bgType === 'custom') && j === state.bg;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-checked', active ? 'true' : 'false');
+    el.tabIndex = active ? 0 : -1;
+    el.setAttribute('aria-label', `${state.lang === 'th' ? 'พื้นหลังไล่สี' : 'Gradient background'} ${j + 1}`);
+  });
   $('bgImageBtn').classList.toggle('active', state.bgType === 'image');
   $('bgTransBtn').classList.toggle('active', state.bgType === 'transparent');
+  const type = state.bgType === 'image' ? 'image' : state.bgType === 'color' ? 'color' : 'gradient';
+  setChipRow('bgTypeRow', 'bgType', type);
 }
 
-$('cg1').addEventListener('input', () => { state.bgType = 'custom'; syncBgActive(); requestRender(); });
-$('cg2').addEventListener('input', () => { state.bgType = 'custom'; syncBgActive(); requestRender(); });
-$('bgTransBtn').onclick = () => { state.bgType = 'transparent'; syncBgActive(); requestRender(); };
+$('bgTypeRow').addEventListener('click', e => {
+  const button = e.target.closest('[data-bg-type]');
+  if (!button || button.disabled) return;
+  const type = button.dataset.bgType;
+  if (type === 'gradient') state.bgType = state.bgType === 'custom' ? 'custom' : 'preset';
+  else if (type === 'color') state.bgType = 'color';
+  else if (type === 'image') state.bgType = 'image';
+  state.background = { ...state.background, type, value: state.bg, color: state.bgColor, colors: [$('cg1').value, $('cg2').value] };
+  syncBgActive(); requestRender(); markProjectDirty();
+});
+$('bgColor').addEventListener('input', e => { state.bgColor = e.target.value; state.bgType = 'color'; state.background = { ...state.background, type: 'color', color: state.bgColor, value: state.bg }; syncBgActive(); requestRender(); markProjectDirty(); });
+$('cg1').addEventListener('input', () => { state.bgType = 'custom'; state.background = { ...state.background, type: 'gradient', colors: [$('cg1').value, $('cg2').value], value: state.bg }; syncBgActive(); requestRender(); markProjectDirty(); });
+$('cg2').addEventListener('input', () => { state.bgType = 'custom'; state.background = { ...state.background, type: 'gradient', colors: [$('cg1').value, $('cg2').value], value: state.bg }; syncBgActive(); requestRender(); markProjectDirty(); });
+$('bgTransBtn').onclick = () => { state.bgType = 'transparent'; state.background = { ...state.background, type: 'transparent', value: state.bg }; syncBgActive(); requestRender(); markProjectDirty(); };
 $('bgImageBtn').onclick = () => $('bgImageInput').click();
 $('bgImageInput').onchange = e => {
   const f = e.target.files[0];
   if (!f) return;
   const img = new Image();
-  img.onload = () => { state.bgImageEl = img; state.bgType = 'image'; syncBgActive(); requestRender(); };
+  img.onload = () => { state.bgImageEl = img; state.bgType = 'image'; state.background = { ...state.background, type: 'image', value: f.name || 'local-image' }; syncBgActive(); requestRender(); markProjectDirty(); };
   img.src = URL.createObjectURL(f);
 };
+$('bgBlur').addEventListener('input', e => { const value = parseFloat(e.target.value) || 0; state.background = { ...state.background, blur: value }; $('bgBlurVal').textContent = String(value); requestRender(); markProjectDirty(); });
 
 // ---------- ตัวช่วยผูก chip row ----------
 function bindChips(rowId, attr, cb) {
@@ -621,6 +665,30 @@ bindChips('frameRow', 'frame', v => {
   $('urlText').style.display = v === 'browser' ? 'block' : 'none';
   if (state.aspect === 'fit') setCanvasForAspect(); // เฟรมเปลี่ยนสัดส่วนกรอบรวม
 });
+$('frameReset').onclick = () => {
+  state.frame = 'none'; state.frameColor = PHONE_COLORS[0][0]; state.padding = 0; state.radius = 3; state.shadow = 60;
+  setChipRow('frameRow', 'frame', 'none');
+  $('phoneColors').style.display = 'none'; $('urlText').style.display = 'none';
+  for (const [id, value, suffix] of [['padding', 0, '%'], ['radius', 3, '%'], ['shadow', 60, '']]) { $(id).value = value; $(id + 'Val').textContent = value + suffix; }
+  if (state.aspect === 'fit') setCanvasForAspect();
+  requestRender(); markProjectDirty();
+};
+
+function syncCursorUI() {
+  const settings = state.cursorSettings || {};
+  setChipRow('cursorStyleRow', 'cursorStyle', settings.style || 'soft');
+  setChipRow('cursorEffectRow', 'cursorEffect', settings.clickEffect || 'ripple');
+  for (const [id, value, text] of [['cursorSize', settings.size || 1, `${Number(settings.size || 1).toFixed(1)}x`], ['cursorSmoothing', settings.smoothing ?? .65, `${Math.round((settings.smoothing ?? .65) * 100)}%`], ['cursorBounce', settings.clickBounce ?? 1, Number(settings.clickBounce ?? 1).toFixed(1)], ['cursorSway', settings.sway ?? 0, Number(settings.sway ?? 0).toFixed(1)]]) {
+    $(id).value = value; $(id + 'Val').textContent = text;
+  }
+}
+bindChips('cursorStyleRow', 'cursorStyle', v => { state.cursorSettings.style = v; markProjectDirty(); });
+bindChips('cursorEffectRow', 'cursorEffect', v => { state.cursorSettings.clickEffect = v; markProjectDirty(); });
+$('cursorSize').addEventListener('input', e => { state.cursorSettings.size = parseFloat(e.target.value); $('cursorSizeVal').textContent = state.cursorSettings.size.toFixed(1) + 'x'; requestRender(); markProjectDirty(); });
+$('cursorSmoothing').addEventListener('input', e => { state.cursorSettings.smoothing = parseFloat(e.target.value); $('cursorSmoothingVal').textContent = Math.round(state.cursorSettings.smoothing * 100) + '%'; requestRender(); markProjectDirty(); });
+$('cursorBounce').addEventListener('input', e => { state.cursorSettings.clickBounce = parseFloat(e.target.value); $('cursorBounceVal').textContent = state.cursorSettings.clickBounce.toFixed(1); requestRender(); markProjectDirty(); });
+$('cursorSway').addEventListener('input', e => { state.cursorSettings.sway = parseFloat(e.target.value); $('cursorSwayVal').textContent = state.cursorSettings.sway.toFixed(1); requestRender(); markProjectDirty(); });
+$('cursorReset').onclick = () => { state.cursorSettings = { ...ZoomCutCore.DEFAULT_CURSOR_SETTINGS }; syncCursorUI(); requestRender(); markProjectDirty(); };
 
 const phoneColorsRow = $('phoneColors');
 PHONE_COLORS.forEach(([hex, name], i) => {
@@ -641,7 +709,7 @@ $('urlText').addEventListener('input', e => { state.urlText = e.target.value; re
 // ---------- Presets (localStorage) ----------
 const PRESET_KEY = 'zoomcut-presets';
 const PRESET_FIELDS = ['aspect', 'posV', 'bg', 'bgType', 'padding', 'radius', 'shadow',
-  'frame', 'frameColor', 'urlText', 'statusBar', 'showTaps', 'defZoom', 'defHold', 'exportScale'];
+  'frame', 'frameColor', 'urlText', 'statusBar', 'showTaps', 'defZoom', 'defHold', 'exportScale', 'bgColor'];
 
 function loadPresets() { try { return JSON.parse(localStorage.getItem(PRESET_KEY)) || {}; } catch { return {}; } }
 function refreshPresetList(selected) {
@@ -715,6 +783,7 @@ function applySettings(s) {
   if (s.crop) { state.crop = { t: s.crop.t || 0, r: s.crop.r || 0, b: s.crop.b || 0, l: s.crop.l || 0 }; syncCropUI(); }
   if (s._cg1) $('cg1').value = s._cg1;
   if (s._cg2) $('cg2').value = s._cg2;
+  if (s.bgColor) state.bgColor = s.bgColor;
   // sync UI ทั้งหมด
   setCanvasForAspect();
   setChipRow('aspectRow', 'aspect', state.aspect);
@@ -727,6 +796,9 @@ function applySettings(s) {
   $('urlText').style.display = state.frame === 'browser' ? 'block' : 'none';
   $('urlText').value = state.urlText;
   $('videoExportPreset').value = String(state.videoExportScale || 1);
+  $('bgColor').value = state.bgColor || state.background?.color || '#151821';
+  $('bgBlur').value = state.background?.blur || 0;
+  $('bgBlurVal').textContent = String(state.background?.blur || 0);
   phoneColorsRow.querySelectorAll('.phone-swatch').forEach((x, i) =>
     x.classList.toggle('active', PHONE_COLORS[i][0] === state.frameColor));
   for (const [id, key, fmt] of [['padding', 'padding', v => v + '%'], ['radius', 'radius', v => v + '%'],
@@ -735,6 +807,7 @@ function applySettings(s) {
     $(id + 'Val').textContent = fmt(state[key]);
   }
   syncBgActive();
+  syncCursorUI();
   requestRender();
 }
 
@@ -1170,9 +1243,20 @@ async function restoreProject(document, projectPath, recovered = false) {
       if (settings.background && typeof settings.background === 'object') {
         if (settings.background.type) state.bgType = settings.background.type;
         if (settings.background.value !== undefined) state.bg = settings.background.value;
+        if (settings.background.color) state.bgColor = settings.background.color;
+        if (Array.isArray(settings.background.colors)) {
+          state.background = { ...state.background, colors: settings.background.colors.slice(0, 4) };
+          if (settings.background.colors[0]) $('cg1').value = settings.background.colors[0];
+          if (settings.background.colors[1]) $('cg2').value = settings.background.colors[1];
+        }
       }
       if (settings.frameStyle !== undefined) {
         state.frame = typeof settings.frameStyle === 'string' ? settings.frameStyle : (settings.frameStyle.type || state.frame);
+        if (typeof settings.frameStyle === 'object') {
+          state.padding = settings.frameStyle.padding ?? state.padding;
+          state.radius = settings.frameStyle.radius ?? state.radius;
+          state.shadow = settings.frameStyle.shadow ?? state.shadow;
+        }
       }
       state.segments = saved.segments.map(x => ({ ...x }));
       state.events = (saved.events || []).map(x => ({ ...x }));
@@ -1360,6 +1444,10 @@ let checkerPattern = null;
 function drawBackground(forExport) {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
+  const blur = Math.max(0, Number(state.background?.blur || 0));
+  const bleed = blur ? blur * 2 : 0;
+  ctx.save();
+  if (blur) ctx.filter = `blur(${blur}px)`;
   if (state.bgType === 'transparent') {
     if (!forExport) {
       if (!checkerPattern) {
@@ -1373,21 +1461,28 @@ function drawBackground(forExport) {
       ctx.fillStyle = checkerPattern;
       ctx.fillRect(0, 0, W, H);
     }
-    return;
+    ctx.restore(); return;
   }
   if (state.bgType === 'image' && state.bgImageEl) {
     const img = state.bgImageEl;
-    const s = Math.max(W / img.naturalWidth, H / img.naturalHeight);
+    const s = Math.max((W + bleed * 2) / img.naturalWidth, (H + bleed * 2) / img.naturalHeight);
     const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
     ctx.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
-    return;
+    ctx.restore(); return;
   }
-  const [c1, c2] = state.bgType === 'custom' ? [$('cg1').value, $('cg2').value] : BACKGROUNDS[state.bg];
+  if (state.bgType === 'color') {
+    ctx.fillStyle = state.bgColor || state.background?.color || '#151821';
+    ctx.fillRect(-bleed, -bleed, W + bleed * 2, H + bleed * 2);
+    ctx.restore(); return;
+  }
+  const colors = state.background?.colors?.length >= 2 ? state.background.colors : null;
+  const [c1, c2] = state.bgType === 'custom' ? [$('cg1').value, $('cg2').value] : (colors || BACKGROUNDS[state.bg]);
   const grad = ctx.createLinearGradient(0, 0, W, H);
   grad.addColorStop(0, c1);
   grad.addColorStop(1, c2);
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(-bleed, -bleed, W + bleed * 2, H + bleed * 2);
+  ctx.restore();
 }
 
 // ---------- Status bar ปลอมแบบ Screeny ----------
@@ -1494,27 +1589,116 @@ function drawTaps(L, cam) {
   const c = L.content;
   const sr = sourceRect(cam);
   const m = rawMedia();
+  const effect = state.cursorSettings?.clickEffect || 'ripple';
+  if (effect === 'none') return;
   for (const tp of state.taps) {
     const dt = ct - tp.t;
-    if (dt < 0 || dt > 0.55) continue;
-    const p = easeOutQuad(dt / 0.55);
+    const duration = Math.max(0.08, (state.cursorSettings?.bounceDurationMs || 350) / 1000);
+    if (dt < 0 || dt > duration) continue;
+    const p = easeOutQuad(dt / duration);
     // พิกัด tap เป็น normalized ของวิดีโอเต็ม → พิกเซลต้นฉบับ → พิกัดบน content
     const px = c.x + (tp.x * m.w - sr.sx) / sr.sw * c.w;
     const py = c.y + (tp.y * m.h - sr.sy) / sr.sh * c.h;
     if (px < c.x || px > c.x + c.w || py < c.y || py > c.y + c.h) continue;
-    const rad = (0.018 + 0.05 * p) * c.w * Math.sqrt(cam.zoom);
+    const rad = (0.018 + (effect === 'target' ? 0.025 : effect === 'ring' ? 0.04 : 0.05) * p) * c.w * Math.sqrt(cam.zoom);
     ctx.save();
     roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
     ctx.clip();
     ctx.beginPath();
     ctx.arc(px, py, rad, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255,255,255,${0.28 * (1 - p)})`;
-    ctx.fill();
     ctx.lineWidth = c.w * 0.004;
-    ctx.strokeStyle = `rgba(255,255,255,${0.75 * (1 - p)})`;
+    ctx.strokeStyle = `rgba(255,255,255,${0.78 * (1 - p)})`;
     ctx.stroke();
+    if (effect === 'pulse' || effect === 'ripple') {
+      ctx.fillStyle = `rgba(255,255,255,${(effect === 'pulse' ? 0.38 : 0.22) * (1 - p)})`;
+      ctx.fill();
+    }
+    if (effect === 'target') {
+      ctx.beginPath();
+      ctx.arc(px, py, rad * 0.46, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * (1 - p)})`;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(px - rad * 1.25, py); ctx.lineTo(px + rad * 1.25, py);
+      ctx.moveTo(px, py - rad * 1.25); ctx.lineTo(px, py + rad * 1.25);
+      ctx.stroke();
+    }
     ctx.restore();
   }
+}
+
+function sourcePointOnCanvas(point, L, cam) {
+  const c = L.content, sr = sourceRect(cam), m = rawMedia();
+  if (!m || !point) return null;
+  const px = c.x + (point.x * m.w - sr.sx) / sr.sw * c.w;
+  const py = c.y + (point.y * m.h - sr.sy) / sr.sh * c.h;
+  if (px < c.x || px > c.x + c.w || py < c.y || py > c.y + c.h) return null;
+  return { x: px, y: py };
+}
+
+function drawCursor(L, cam) {
+  if (state.mode !== 'video' || !state.cursorSettings?.enabled || !state.cursorPoints?.length) return;
+  const sample = ZoomCutCore.cursorAt(state.cursorPoints, video.currentTime, state.cursorSettings.smoothing);
+  if (!sample || sample.opacity <= 0) return;
+  const point = sourcePointOnCanvas(sample, L, cam);
+  if (!point) return;
+  const c = L.content;
+  const settings = state.cursorSettings;
+  const base = Math.max(12, Math.min(c.w, c.h) * 0.042 * (settings.size || 1));
+  const recentTap = state.taps.reduce((best, tap) => {
+    const age = video.currentTime - tap.t;
+    return age >= 0 && age <= (settings.bounceDurationMs || 350) / 1000 && (!best || tap.t > best.t) ? tap : best;
+  }, null);
+  const age = recentTap ? video.currentTime - recentTap.t : Infinity;
+  const bounceT = recentTap ? clamp(age / Math.max(0.08, (settings.bounceDurationMs || 350) / 1000), 0, 1) : 1;
+  const bounce = recentTap ? 1 + (settings.clickBounce || 0) * Math.sin(Math.PI * bounceT) * 0.16 : 1;
+  const sway = Math.sin(video.currentTime * 4.2) * (settings.sway || 0) * 0.08;
+  const r = base * bounce;
+  ctx.save();
+  roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r);
+  ctx.clip();
+  ctx.translate(point.x, point.y);
+  ctx.rotate(sway);
+  ctx.globalAlpha = sample.opacity;
+  ctx.lineJoin = 'round';
+  const style = settings.style || 'soft';
+  if (style === 'pointer') {
+    ctx.beginPath(); ctx.moveTo(-r * .24, -r * .9); ctx.lineTo(r * .22, r * .48); ctx.lineTo(r * .58, r * .38);
+    ctx.lineTo(r * .76, r * .58); ctx.lineTo(r * .32, r * .68); ctx.lineTo(r * .12, r * 1.02); ctx.closePath();
+    ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = Math.max(2, r * .1); ctx.strokeStyle = '#171922'; ctx.stroke();
+  } else if (style === 'dot') {
+    ctx.beginPath(); ctx.arc(0, 0, r * .34, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.lineWidth = Math.max(2, r * .09); ctx.strokeStyle = 'rgba(23,25,34,.9)'; ctx.stroke();
+  } else {
+    if (style === 'shadow' || style === 'soft') { ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = r * .38; ctx.shadowOffsetY = r * .14; }
+    ctx.beginPath(); ctx.arc(0, 0, r * .52, 0, Math.PI * 2);
+    ctx.fillStyle = style === 'outline' ? 'rgba(255,255,255,.12)' : style === 'classic' ? '#fff' : style === 'solid' ? '#11131a' : 'rgba(255,255,255,.88)';
+    ctx.fill();
+    if (style === 'outline' || style === 'classic' || style === 'shadow' || style === 'soft') {
+      ctx.shadowColor = 'transparent'; ctx.lineWidth = Math.max(2, r * .1); ctx.strokeStyle = style === 'outline' ? '#fff' : '#181a22'; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(-r * .16, -r * .16, r * .12, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAnnotations(L, cam) {
+  if (!state.annotations?.length || state.mode !== 'video') return;
+  const t = video.currentTime, c = L.content, m = rawMedia(), sr = sourceRect(cam);
+  const map = (x, y) => ({ x: c.x + (x * m.w - sr.sx) / sr.sw * c.w, y: c.y + (y * m.h - sr.sy) / sr.sh * c.h });
+  ctx.save(); roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r); ctx.clip();
+  for (const annotation of state.annotations) {
+    if (t < annotation.start || t > annotation.start + annotation.duration) continue;
+    const a = map(annotation.x || 0, annotation.y || 0), b = map(annotation.x2 ?? annotation.x ?? 0, annotation.y2 ?? annotation.y ?? 0);
+    ctx.globalAlpha = clamp((annotation.opacity ?? 1), 0, 1);
+    ctx.strokeStyle = annotation.color || '#aeb8ff'; ctx.fillStyle = annotation.color || '#aeb8ff';
+    ctx.lineWidth = Math.max(3, c.w * .006);
+    if (annotation.type === 'text') { ctx.font = `700 ${Math.max(18, c.w * .035)}px -apple-system, sans-serif`; ctx.fillText(annotation.text || '', a.x, a.y); }
+    else if (annotation.type === 'arrow') { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); const angle = Math.atan2(b.y - a.y, b.x - a.x); ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - 16 * Math.cos(angle - .5), b.y - 16 * Math.sin(angle - .5)); ctx.lineTo(b.x - 16 * Math.cos(angle + .5), b.y - 16 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill(); }
+    else if (annotation.type === 'rectangle' || annotation.type === 'highlight') { ctx.globalAlpha *= annotation.type === 'highlight' ? .3 : 1; ctx.strokeRect(a.x, a.y, (annotation.width || .2) * c.w, (annotation.height || .12) * c.h); }
+    else if (annotation.type === 'blur') { ctx.globalAlpha *= .24; ctx.fillRect(a.x, a.y, (annotation.width || .2) * c.w, (annotation.height || .12) * c.h); }
+  }
+  ctx.restore();
 }
 
 function drawDebugOverlay(L, cam) {
@@ -1765,7 +1949,10 @@ function drawFrame(forExport = false) {
   drawOverlayVideoClips(L);
   if (state.statusBar !== 'none') drawStatusBar(L);
   if (state.frame === 'browser') drawBrowserChrome(L);
+  // Keep overlays in a stable z-order for preview and offline export.
+  drawAnnotations(L, cam);
   drawTaps(L, cam);
+  drawCursor(L, cam);
   drawFacecamOverlay(L);
   drawDebugOverlay(L, cam);
 }
