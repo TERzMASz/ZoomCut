@@ -194,6 +194,10 @@ body[data-theme="light"] {
 .shell-primary-action.record-action { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .shell-secondary-action, .shell-action { border: 1px solid var(--shell-line); background: var(--shell-surface-2); color: var(--shell-muted); }
 .shell-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.annotation-tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.annotation-tool { min-height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10px; }
+.annotation-tool span { font-size: 9px; }
+.annotation-tool.active { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, var(--shell-surface-3)); border-color: color-mix(in srgb, var(--accent) 70%, var(--shell-line)); }
 .settings-slot { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; }
 .settings-slot > * { width: 100% !important; min-width: 0; }
 .device-slot { display: flex; flex-direction: column; gap: 7px; }
@@ -460,6 +464,15 @@ body[data-theme="light"] #editorShell .timeline-area { background: #f5f7fa; }
 body[data-theme="light"] #editorShell .lane-label { background: #eef1f5; }
 #editorShell .seg-track, #editorShell .voice-track, #editorShell .camera-track { height: 36px; border-radius: 5px; }
 #editorShell .seg-block, #editorShell .voice-clip, #editorShell .camera-clip { border-radius: 4px; }
+#editorShell .annotation-track { height: 36px; border-radius: 5px; position: relative; background: color-mix(in srgb, #9a8cff 8%, var(--shell-surface-2)); }
+#editorShell .annotation-clip { position: absolute; top: 4px; height: 28px; min-width: 12px; padding: 0 8px; display: flex; align-items: center; gap: 4px; border: 1px solid color-mix(in srgb, #9a8cff 64%, var(--shell-line)); border-radius: 4px; color: #f1efff; background: linear-gradient(135deg, rgba(143,125,255,.58), rgba(71,77,164,.62)); font-size: 10px; cursor: grab; overflow: hidden; }
+#editorShell .annotation-clip.selected { outline: 2px solid #c0b8ff; outline-offset: 1px; }
+#editorShell .annotation-clip .annotation-handle { position: absolute; top: 0; width: 14px; height: 100%; margin: 0; border-radius: 4px; background: rgba(255,255,255,.78); cursor: ew-resize; z-index: 2; box-shadow: 0 0 0 1px rgba(11,14,24,.22); }
+#editorShell .annotation-clip .annotation-handle.left { left: -1px; }
+#editorShell .annotation-clip .annotation-handle.right { right: -1px; }
+#editorShell .annotation-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#editorShell #annotationEdit.lane-locked { opacity: .62; }
+#editorShell #annotationEdit.lane-locked::after { content: '🔒'; margin-left: 4px; color: var(--shell-muted); }
 
 @media (max-width: 1120px) {
   :root { --shell-inspector: 240px; }

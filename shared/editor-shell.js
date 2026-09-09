@@ -18,6 +18,7 @@
     sectionVideoFrame: 'style',
     sectionCrop: 'style',
     sectionZoomDefaults: 'clicks',
+    sectionAnnotations: 'annotations',
   };
 
   let panel = 'media';
@@ -51,15 +52,15 @@
     if (control) settingsSlot.appendChild(control);
   }
 
-  for (const id of ['cameraEdit', 'voiceEdit', 'segEdit', 'markerEdit']) {
+  for (const id of ['cameraEdit', 'voiceEdit', 'segEdit', 'markerEdit', 'annotationEdit']) {
     const panelElement = document.getElementById(id);
     if (panelElement) inspectorContent.appendChild(panelElement);
   }
 
   const labels = {
     th: {
-      media: 'สื่อในโปรเจกต์', record: 'อัดหน้าจอ', audio: 'เสียง', camera: 'กล้อง', clicks: 'Click & Zoom', style: 'สไตล์', export: 'ส่งออก', settings: 'ตั้งค่า',
-      railMedia: 'สื่อ', railRecord: 'อัด', railAudio: 'เสียง', railCamera: 'กล้อง', railClicks: 'คลิก', railStyle: 'สไตล์', railExport: 'ส่งออก', railSettings: 'ตั้งค่า',
+      media: 'สื่อในโปรเจกต์', record: 'อัดหน้าจอ', audio: 'เสียง', camera: 'กล้อง', clicks: 'Click & Zoom', annotations: 'มาร์กอัป', style: 'สไตล์', export: 'ส่งออก', settings: 'ตั้งค่า',
+      railMedia: 'สื่อ', railRecord: 'อัด', railAudio: 'เสียง', railCamera: 'กล้อง', railClicks: 'คลิก', railAnnotations: 'มาร์กอัป', railStyle: 'สไตล์', railExport: 'ส่งออก', railSettings: 'ตั้งค่า',
       inspectorEmptyTitle: 'เลือกสิ่งที่ต้องการแก้ไข', inspectorEmptyBody: 'เลือกวิดีโอ เสียง กล้อง หรือจุดซูมบน timeline เพื่อดูคุณสมบัติ',
       inspectorNone: 'ยังไม่ได้เลือกคลิป', inspectorVideo: 'วิดีโอ', inspectorVoice: 'เสียงบรรยาย', inspectorCamera: 'กล้องผู้บรรยาย', inspectorZoom: 'จุดซูม',
       addMedia: 'เพิ่มไฟล์', recordMedia: 'อัดหน้าจอ', voiceMedia: 'พากย์เสียง', startVoice: 'เริ่มพากย์เสียง', exportVideo: 'Export วิดีโอ', snapshot: 'บันทึกเฟรม PNG',
@@ -67,10 +68,11 @@
       audioTitle: 'เสียงบรรยาย', audioBody: 'เลือกไมโครโฟนก่อนเริ่มพากย์จากตำแหน่ง playhead', cameraTitle: 'กล้องผู้บรรยาย', cameraBody: 'กล้องจะถูกอัดเป็นคลิปแยกและแก้ตำแหน่งภายหลังได้',
       exportTitle: 'ตั้งค่าการส่งออก', exportBody: 'เลือกความละเอียดก่อนเปิดหน้าต่าง Export', settingsTitle: 'แอปและโปรเจกต์', settingsBody: 'ภาษา ธีม คีย์ลัด และเครื่องมือตรวจสอบ',
       advanced: 'ขั้นสูง', advancedBody: 'การตั้งค่า cursor, shortcut และ annotation พร้อมสำหรับโปรเจกต์รุ่นถัดไป โดยยังไม่เปลี่ยนพฤติกรรมการเรนเดอร์เดิม',
+      annotationsTitle: 'มาร์กอัปบนวิดีโอ', annotationsBody: 'เลือกเครื่องมือแล้วลากบนตัวอย่าง เพื่อเพิ่มข้อความ ลูกศร กรอบ ไฮไลต์ หรือเบลอ',
     },
     en: {
-      media: 'Project media', record: 'Record', audio: 'Audio', camera: 'Camera', clicks: 'Click & Zoom', style: 'Style', export: 'Export', settings: 'Settings',
-      railMedia: 'Media', railRecord: 'Record', railAudio: 'Audio', railCamera: 'Camera', railClicks: 'Clicks', railStyle: 'Style', railExport: 'Export', railSettings: 'Settings',
+      media: 'Project media', record: 'Record', audio: 'Audio', camera: 'Camera', clicks: 'Click & Zoom', annotations: 'Annotations', style: 'Style', export: 'Export', settings: 'Settings',
+      railMedia: 'Media', railRecord: 'Record', railAudio: 'Audio', railCamera: 'Camera', railClicks: 'Clicks', railAnnotations: 'Annotate', railStyle: 'Style', railExport: 'Export', railSettings: 'Settings',
       inspectorEmptyTitle: 'Select something to edit', inspectorEmptyBody: 'Select video, audio, camera, or a zoom point on the timeline to view its properties.',
       inspectorNone: 'Nothing selected', inspectorVideo: 'Video', inspectorVoice: 'Voice over', inspectorCamera: 'Camera overlay', inspectorZoom: 'Zoom point',
       addMedia: 'Add media', recordMedia: 'Record screen', voiceMedia: 'Voice over', startVoice: 'Start voice over', exportVideo: 'Export video', snapshot: 'Save frame as PNG',
@@ -78,6 +80,7 @@
       audioTitle: 'Voice over', audioBody: 'Choose a microphone before recording from the playhead.', cameraTitle: 'Presenter camera', cameraBody: 'Camera is recorded as a separate clip that can be repositioned later.',
       exportTitle: 'Export settings', exportBody: 'Choose a resolution before opening Export.', settingsTitle: 'App and project', settingsBody: 'Language, theme, shortcuts, and diagnostics.',
       advanced: 'Advanced', advancedBody: 'Cursor, shortcut, and annotation settings are ready for the next project milestone without changing legacy rendering behavior.',
+      annotationsTitle: 'Video annotations', annotationsBody: 'Choose a tool and drag on the preview to add text, arrows, frames, highlights, or blur.',
     },
   };
 
@@ -230,6 +233,7 @@
     if (selected?.id === 'voiceEdit') title = text.inspectorVoice;
     if (selected?.id === 'cameraEdit') title = text.inspectorCamera;
     if (selected?.id === 'markerEdit') title = text.inspectorZoom;
+    if (selected?.id === 'annotationEdit') title = state.lang === 'th' ? 'มาร์กอัป' : 'Annotation';
     document.getElementById('inspectorTitle').textContent = title;
   }
 

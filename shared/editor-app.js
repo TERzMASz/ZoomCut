@@ -38,6 +38,8 @@ const state = {
   cursorPoints: [],
   annotations: [],
   annotationLaneCount: 1,
+  annotationTool: null,
+  selectedAnnotationId: null,
   shortcuts: {},
   background: { type: 'preset', value: 0, colors: [], blur: 0, color: '#151821' },
   frameStyle: { type: 'none', padding: 0, radius: 3, shadow: 60 },
@@ -152,8 +154,8 @@ const I18N = {
     camDefault: 'กล้องเริ่มต้น', camLoading: 'กำลังโหลดกล้อง...', camNoDevices: 'ไม่พบกล้อง', camGrant: 'อนุญาตเพื่อดูกล้องทั้งหมด…',
     camOn: '📷 กล้อง', camOff: '📷 ปิดกล้อง', cameraClip: n => `กล้อง ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 ลบกล้อง', fadeIn: 'Fade in', fadeOut: 'Fade out',
-    videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง',
-    addVideoLane: 'เลนวิดีโอ', addVoiceLane: 'เลนเสียง', addCameraLane: 'เลนกล้อง',
+    videoLane: 'วิดีโอ', voiceLane: 'เสียง', cameraLane: 'กล้อง', annotationLane: 'มาร์กอัป',
+    addVideoLane: 'เลนวิดีโอ', addVoiceLane: 'เลนเสียง', addCameraLane: 'เลนกล้อง', addAnnotationLane: 'เลนมาร์กอัป',
     lane: 'เลน', closePanel: 'ปิดเมนูแก้ไข',
     quickRecordTitle: 'อัดทันที', quickRecordSub: 'เลือก Android/iPhone/จอหลักให้อัตโนมัติ',
     quickAddTitle: 'เพิ่มสื่อ', quickAddSub: 'วิดีโอแรกเป็น base, ไฟล์ถัดไปซ้อนเป็น clip',
@@ -209,8 +211,8 @@ const I18N = {
     camDefault: 'Default camera', camLoading: 'Loading cameras...', camNoDevices: 'No cameras found', camGrant: 'Allow access to show all cameras…',
     camOn: '📷 Camera', camOff: '📷 Camera off', cameraClip: n => `Camera ${n}`,
     cameraOverlay: '📷 Camera overlay', cameraDelete: '🗑 Delete camera', fadeIn: 'Fade in', fadeOut: 'Fade out',
-    videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera',
-    addVideoLane: 'Video lane', addVoiceLane: 'Voice lane', addCameraLane: 'Camera lane',
+    videoLane: 'Video', voiceLane: 'Voice', cameraLane: 'Camera', annotationLane: 'Annotations',
+    addVideoLane: 'Video lane', addVoiceLane: 'Voice lane', addCameraLane: 'Camera lane', addAnnotationLane: 'Annotation lane',
     lane: 'Lane', closePanel: 'Close edit panel',
     quickRecordTitle: 'Record now', quickRecordSub: 'Auto-pick Android, iPhone, or the main display',
     quickAddTitle: 'Add media', quickAddSub: 'First video becomes base; more videos become clips',
@@ -246,6 +248,9 @@ function stateSnapshot() {
     selectedVoiceId: state.selectedVoiceId,
     facecams: state.facecams.map(v => ({ ...v })),
     selectedFaceId: state.selectedFaceId,
+    annotations: state.annotations.map(a => ({ ...a })),
+    selectedAnnotationId: state.selectedAnnotationId,
+    annotationLaneCount: state.annotationLaneCount,
     crop: { ...state.crop },
     videoLaneCount: state.videoLaneCount,
     voiceLaneCount: state.voiceLaneCount,
@@ -263,6 +268,9 @@ function restoreSnapshot(s) {
   state.selectedVoiceId = s.selectedVoiceId;
   state.facecams = (s.facecams || []).map(x => ({ ...x }));
   state.selectedFaceId = s.selectedFaceId || null;
+  state.annotations = (s.annotations || []).map(x => ({ ...x }));
+  state.selectedAnnotationId = s.selectedAnnotationId || null;
+  state.annotationLaneCount = s.annotationLaneCount || 1;
   state.crop = { ...s.crop };
   state.videoLaneCount = s.videoLaneCount || 1;
   state.voiceLaneCount = s.voiceLaneCount || 1;
@@ -272,6 +280,7 @@ function restoreSnapshot(s) {
   updateTimelineUI();
   updateVoiceUI();
   updateCameraUI();
+  updateAnnotationUI();
   requestRender();
 }
 function commitHistory() {
@@ -314,10 +323,12 @@ function clearSelection() {
   state.selectedId = null;
   state.selectedVoiceId = null;
   state.selectedFaceId = null;
+  state.selectedAnnotationId = null;
   updateSegUI();
   updateTimelineUI();
   updateVoiceUI();
   updateCameraUI();
+  updateAnnotationUI();
 }
 function selectOnly(kind, id) {
   state.selectedSeg = kind === 'seg' ? id : null;
@@ -325,10 +336,12 @@ function selectOnly(kind, id) {
   state.selectedId = kind === 'marker' ? id : null;
   state.selectedVoiceId = kind === 'voice' ? id : null;
   state.selectedFaceId = kind === 'camera' ? id : null;
+  state.selectedAnnotationId = kind === 'annotation' ? id : null;
   if (kind !== 'seg' && kind !== 'videoClip') $('segEdit').classList.remove('visible');
   if (kind !== 'marker') $('markerEdit').classList.remove('visible');
   if (kind !== 'voice') $('voiceEdit').classList.remove('visible');
   if (kind !== 'camera') $('cameraEdit').classList.remove('visible');
+  if (kind !== 'annotation') $('annotationEdit')?.classList.remove('visible');
 }
 function renderLaneOptions(select, count, selected, labelKey) {
   select.innerHTML = '';
@@ -341,9 +354,22 @@ function renderLaneOptions(select, count, selected, labelKey) {
   }
 }
 function laneConfig(kind, lane) {
-  if (!state.laneSettings) state.laneSettings = { video: [], voice: [], camera: [] };
-  if (!state.laneSettings[kind]) state.laneSettings[kind] = [];
-  if (!state.laneSettings[kind][lane]) state.laneSettings[kind][lane] = { locked: false, muted: false, solo: false, hidden: false };
+  if (!state.laneSettings || typeof state.laneSettings !== 'object' || Array.isArray(state.laneSettings)) {
+    state.laneSettings = { video: [], voice: [], camera: [], annotation: [] };
+  }
+  if (!Array.isArray(state.laneSettings[kind])) state.laneSettings[kind] = [];
+  const current = state.laneSettings[kind][lane];
+  if (!current || typeof current !== 'object' || Array.isArray(current)) {
+    state.laneSettings[kind][lane] = { locked: false, muted: false, solo: false, hidden: false };
+  } else {
+    // Presets and older recovery files can bypass project-core validation.
+    // Keep lane controls boolean and drop hostile/prototype-shaped values at
+    // the UI boundary so lock/visibility checks cannot be tricked by input.
+    state.laneSettings[kind][lane] = {
+      locked: Boolean(current.locked), muted: Boolean(current.muted),
+      solo: Boolean(current.solo), hidden: Boolean(current.hidden),
+    };
+  }
   return state.laneSettings[kind][lane];
 }
 function laneEnabled(kind, lane, purpose = 'display') {
@@ -436,9 +462,16 @@ function applyLanguage() {
   if (fitFrame) fitFrame.title = state.lang === 'th'
     ? 'พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ'
     : 'Fit frame — content fills the frame without surrounding background';
-  for (const [id, key] of [['addVideoLane', 'addVideoLane'], ['addVoiceLane', 'addVoiceLane'], ['addCameraLane', 'addCameraLane']]) {
+  for (const [id, key] of [['addVideoLane', 'addVideoLane'], ['addVoiceLane', 'addVoiceLane'], ['addCameraLane', 'addCameraLane'], ['addAnnotationLane', 'addAnnotationLane']]) {
     $(id).querySelector('[data-lane-text]').textContent = tr(key);
   }
+  const annotationToolLabels = state.lang === 'th'
+    ? { select: 'เลือก', text: 'ข้อความ', arrow: 'ลูกศร', rectangle: 'กรอบ', highlight: 'ไฮไลต์', blur: 'เบลอ' }
+    : { select: 'Select', text: 'Text', arrow: 'Arrow', rectangle: 'Frame', highlight: 'Highlight', blur: 'Blur' };
+  document.querySelectorAll('[data-annotation-tool]').forEach(button => {
+    const label = button.querySelector('span'); if (label) label.textContent = annotationToolLabels[button.dataset.annotationTool] || button.dataset.annotationTool;
+    button.title = annotationToolLabels[button.dataset.annotationTool] || button.dataset.annotationTool;
+  });
   const sliderLabels = [
     ['padding', 'padding'], ['radius', 'radius'], ['shadow', 'shadow'], ['cropT', 'cropTop'],
     ['cropB', 'cropBottom'], ['cropL', 'cropLeft'], ['cropR', 'cropRight'], ['defZoom', 'zoomLevel'],
@@ -514,6 +547,7 @@ function applyLanguage() {
   document.querySelectorAll('[data-lane-base="video"] .lane-name').forEach((el, i) => el.textContent = `${tr('videoLane')} ${i + 1}`);
   document.querySelectorAll('[data-lane-base="voice"] .lane-name').forEach((el, i) => el.textContent = `${tr('voiceLane')} ${i + 1}`);
   document.querySelectorAll('[data-lane-base="camera"] .lane-name').forEach((el, i) => el.textContent = `${tr('cameraLane')} ${i + 1}`);
+  document.querySelectorAll('[data-lane-base="annotation"] .lane-name').forEach((el, i) => el.textContent = `${tr('annotationLane')} ${i + 1}`);
   document.querySelectorAll('.panel-close').forEach(btn => btn.title = tr('closePanel'));
   document.querySelectorAll('#segEdit label, #voiceEdit label, #cameraEdit label').forEach(label => {
     if (label.closest('span')?.querySelector('#segLane, #voiceLane, #cameraLane')) label.textContent = tr('lane') + ' ';
@@ -1058,6 +1092,9 @@ function loadImage(file) {
     state.cursorPoints = [];
     state.annotations = [];
     state.annotationLaneCount = 1;
+    state.selectedAnnotationId = null;
+    state.annotationTool = null;
+    setAnnotationTool(null);
     state.voiceovers = [];
     state.selectedVoiceId = null;
     state.videoClips = [];
@@ -1095,6 +1132,9 @@ function loadVideoSource(url, source, clicksFile, onLoaded) {
     state.cursorPoints = [];
     state.annotations = [];
     state.annotationLaneCount = 1;
+    state.selectedAnnotationId = null;
+    state.annotationTool = null;
+    setAnnotationTool(null);
     state.voiceovers = [];
     state.selectedVoiceId = null;
     state.videoClips = [];
@@ -1264,6 +1304,9 @@ async function restoreProject(document, projectPath, recovered = false) {
       state.cursorPoints = (saved.cursorPoints || []).map(x => ({ ...x }));
       state.annotations = (saved.annotations || []).map(x => ({ ...x }));
       state.annotationLaneCount = saved.annotationLaneCount || 1;
+      state.selectedAnnotationId = null;
+      state.annotationTool = null;
+      setAnnotationTool(null);
       state.videoClips = await Promise.all((saved.videoClips || []).map(x => hydrateClip({ ...x }, 'video')));
       state.voiceovers = await Promise.all((saved.voiceovers || []).map(x => hydrateClip({ ...x }, 'voice')));
       state.facecams = await Promise.all((saved.facecams || []).map(x => hydrateClip({ ...x }, 'camera')));
@@ -1682,21 +1725,102 @@ function drawCursor(L, cam) {
   ctx.restore();
 }
 
+let annotationSceneBuffer = null;
+function ensureAnnotationSceneBuffer() {
+  if (!annotationSceneBuffer) {
+    annotationSceneBuffer = document.createElement('canvas');
+    annotationSceneBuffer.width = canvas.width; annotationSceneBuffer.height = canvas.height;
+    annotationSceneBuffer._ctx = annotationSceneBuffer.getContext('2d');
+  }
+  if (annotationSceneBuffer.width !== canvas.width || annotationSceneBuffer.height !== canvas.height) {
+    annotationSceneBuffer.width = canvas.width; annotationSceneBuffer.height = canvas.height;
+    annotationSceneBuffer._ctx = annotationSceneBuffer.getContext('2d');
+  }
+  return annotationSceneBuffer;
+}
+function captureAnnotationScene() {
+  const buffer = ensureAnnotationSceneBuffer();
+  buffer._ctx.clearRect(0, 0, buffer.width, buffer.height);
+  buffer._ctx.drawImage(canvas, 0, 0);
+}
+function annotationOutputTime() {
+  return state.mode === 'video' ? sourceToOutputTime(video.currentTime) : 0;
+}
+function annotationMapPoint(point, c, m, sr) {
+  return ZoomCutCore.sourceRectToCanvasPoint(m, sr, c, point);
+}
+function annotationCanvasRect(annotation, c, m, sr) {
+  const a = annotationMapPoint(annotation, c, m, sr);
+  const b = annotation.type === 'arrow'
+    ? annotationMapPoint({ x: annotation.x2 ?? annotation.x ?? 0, y: annotation.y2 ?? annotation.y ?? 0 }, c, m, sr)
+    : annotationMapPoint({ x: (annotation.x || 0) + (annotation.width || 0.2), y: (annotation.y || 0) + (annotation.height || 0.12) }, c, m, sr);
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+}
+function drawWrappedAnnotationText(annotation, rect, c) {
+  const fontSize = Math.max(16, Math.min(c.w, c.h) * (annotation.fontSize || 0.045));
+  ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
+  ctx.font = `700 ${fontSize}px ${annotation.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'}`;
+  ctx.textAlign = annotation.align || 'left'; ctx.textBaseline = 'top';
+  const lines = String(annotation.text || '').slice(0, 4096).split(/\n/);
+  const maxWidth = Math.max(20, rect.w || c.w * .25), lineHeight = fontSize * 1.25;
+  const maxLines = Math.max(1, Math.ceil(rect.h / lineHeight));
+  const x = annotation.align === 'center' ? rect.x + rect.w / 2 : annotation.align === 'right' ? rect.x + rect.w : rect.x;
+  let y = rect.y, renderedLines = 0;
+  for (const raw of lines) {
+    if (renderedLines >= maxLines) break;
+    let line = '';
+    const tokens = raw.split(/\s+/).flatMap((word, wordIndex) => {
+      if (ctx.measureText(word).width <= maxWidth) return [{ text: word, space: wordIndex > 0 }];
+      return [...new Intl.Segmenter(state.lang, { granularity: 'grapheme' }).segment(word)]
+        .map((part, index) => ({ text: part.segment, space: wordIndex > 0 && index === 0 }));
+    });
+    for (const token of tokens) {
+      const candidate = `${line}${line && token.space ? ' ' : ''}${token.text}`;
+      if (ctx.measureText(candidate).width > maxWidth && line) {
+        ctx.fillText(line, x, y); y += lineHeight; renderedLines += 1; line = token.text;
+        if (renderedLines >= maxLines) break;
+      } else line = candidate;
+    }
+    if (renderedLines < maxLines) { ctx.fillText(line, x, y); y += lineHeight; renderedLines += 1; }
+  }
+  ctx.restore();
+}
 function drawAnnotations(L, cam) {
   if (!state.annotations?.length || state.mode !== 'video') return;
-  const t = video.currentTime, c = L.content, m = rawMedia(), sr = sourceRect(cam);
-  const map = (x, y) => ({ x: c.x + (x * m.w - sr.sx) / sr.sw * c.w, y: c.y + (y * m.h - sr.sy) / sr.sh * c.h });
+  const t = annotationOutputTime(), c = L.content, m = rawMedia(), sr = sourceRect(cam);
+  if (!m) return;
   ctx.save(); roundRectPath(ctx, c.x, c.y, c.w, c.h, c.r); ctx.clip();
   for (const annotation of state.annotations) {
-    if (t < annotation.start || t > annotation.start + annotation.duration) continue;
-    const a = map(annotation.x || 0, annotation.y || 0), b = map(annotation.x2 ?? annotation.x ?? 0, annotation.y2 ?? annotation.y ?? 0);
-    ctx.globalAlpha = clamp((annotation.opacity ?? 1), 0, 1);
-    ctx.strokeStyle = annotation.color || '#aeb8ff'; ctx.fillStyle = annotation.color || '#aeb8ff';
-    ctx.lineWidth = Math.max(3, c.w * .006);
-    if (annotation.type === 'text') { ctx.font = `700 ${Math.max(18, c.w * .035)}px -apple-system, sans-serif`; ctx.fillText(annotation.text || '', a.x, a.y); }
-    else if (annotation.type === 'arrow') { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); const angle = Math.atan2(b.y - a.y, b.x - a.x); ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - 16 * Math.cos(angle - .5), b.y - 16 * Math.sin(angle - .5)); ctx.lineTo(b.x - 16 * Math.cos(angle + .5), b.y - 16 * Math.sin(angle + .5)); ctx.closePath(); ctx.fill(); }
-    else if (annotation.type === 'rectangle' || annotation.type === 'highlight') { ctx.globalAlpha *= annotation.type === 'highlight' ? .3 : 1; ctx.strokeRect(a.x, a.y, (annotation.width || .2) * c.w, (annotation.height || .12) * c.h); }
-    else if (annotation.type === 'blur') { ctx.globalAlpha *= .24; ctx.fillRect(a.x, a.y, (annotation.width || .2) * c.w, (annotation.height || .12) * c.h); }
+    if (!ZoomCutCore.annotationActive(annotation, t) || !laneEnabled('annotation', annotation.lane || 0)) continue;
+    const a = annotationMapPoint(annotation, c, m, sr);
+    const b = annotationMapPoint({ x: annotation.x2 ?? annotation.x ?? 0, y: annotation.y2 ?? annotation.y ?? 0 }, c, m, sr);
+    const rect = annotationCanvasRect(annotation, c, m, sr);
+    ctx.globalAlpha = clamp(annotation.opacity ?? 1, 0, 1);
+    ctx.strokeStyle = annotation.color || '#8ea2ff'; ctx.fillStyle = annotation.color || '#8ea2ff';
+    ctx.lineWidth = Math.max(2, c.w * (annotation.strokeWidth || .006));
+    if (annotation.type === 'text') {
+      drawWrappedAnnotationText(annotation, rect, c);
+    } else if (annotation.type === 'arrow') {
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      const angle = Math.atan2(b.y - a.y, b.x - a.x), head = Math.max(10, c.w * .025);
+      ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - head * Math.cos(angle - .5), b.y - head * Math.sin(angle - .5)); ctx.lineTo(b.x - head * Math.cos(angle + .5), b.y - head * Math.sin(angle + .5)); ctx.closePath(); ctx.fill();
+    } else if (annotation.type === 'rectangle') {
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    } else if (annotation.type === 'highlight') {
+      ctx.globalAlpha *= .32; ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    } else if (annotation.type === 'blur') {
+      const buffer = annotationSceneBuffer;
+      if (buffer) {
+        const pad = Math.max(1, Math.round((annotation.blur || 18) * canvas.width / 1920));
+        ctx.save(); ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
+        ctx.globalAlpha = clamp(annotation.opacity ?? 1, 0, 1); ctx.filter = `blur(${pad}px)`;
+        ctx.drawImage(buffer,
+          rect.x - pad, rect.y - pad, rect.w + pad * 2, rect.h + pad * 2,
+          rect.x - pad, rect.y - pad, rect.w + pad * 2, rect.h + pad * 2);
+        ctx.filter = 'none'; ctx.restore();
+        ctx.strokeStyle = 'rgba(255,255,255,.16)'; ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      }
+    }
   }
   ctx.restore();
 }
@@ -1949,6 +2073,10 @@ function drawFrame(forExport = false) {
   drawOverlayVideoClips(L);
   if (state.statusBar !== 'none') drawStatusBar(L);
   if (state.frame === 'browser') drawBrowserChrome(L);
+  // Annotation blur samples the composited scene only. Capture before click,
+  // cursor, and facecam so those overlays are never blurred accidentally.
+  const annotationTime = annotationOutputTime();
+  if (state.annotations?.some(a => a.type === 'blur' && ZoomCutCore.annotationActive(a, annotationTime) && laneEnabled('annotation', a.lane || 0))) captureAnnotationScene();
   // Keep overlays in a stable z-order for preview and offline export.
   drawAnnotations(L, cam);
   drawTaps(L, cam);
@@ -1970,6 +2098,7 @@ requestAnimationFrame(loop);
 // ---------- Click on canvas → add zoom ----------
 canvas.addEventListener('click', e => {
   if (!state.loaded || state.exporting || state.mode !== 'video') return;
+  if (state.annotationTool || state.selectedAnnotationId) return;
   const bounds = canvas.getBoundingClientRect();
   const px = (e.clientX - bounds.left) / bounds.width * canvas.width;
   const py = (e.clientY - bounds.top) / bounds.height * canvas.height;
@@ -2795,7 +2924,7 @@ function initSegments() {
   updateSegUI();
 }
 function outputDuration() {
-  return state.segments.reduce((a, s) => a + (s.end - s.start) / s.speed, 0);
+  return ZoomCutCore.outputDuration(state.segments);
 }
 function segmentOutputStart(target) {
   let out = 0;
@@ -2806,22 +2935,10 @@ function segmentOutputStart(target) {
   return out;
 }
 function sourceToOutputTime(t) {
-  let out = 0;
-  for (const s of state.segments) {
-    if (t >= s.start - 1e-3 && t <= s.end + 1e-3) return out + Math.max(0, t - s.start) / s.speed;
-    out += (s.end - s.start) / s.speed;
-  }
-  return Math.max(0, Math.min(outputDuration(), out));
+  return ZoomCutCore.sourceToOutputTime(state.segments, t);
 }
 function outputToSourceTime(outT) {
-  let cursor = 0;
-  for (const s of state.segments) {
-    const len = (s.end - s.start) / s.speed;
-    if (outT <= cursor + len + 1e-3) return Math.min(s.end, s.start + Math.max(0, outT - cursor) * s.speed);
-    cursor += len;
-  }
-  const last = state.segments[state.segments.length - 1];
-  return last ? last.end : 0;
+  return ZoomCutCore.outputToSourceTime(state.segments, outT);
 }
 function voiceOutStart(v) {
   if (v.outStart !== undefined) return v.outStart;
@@ -2897,6 +3014,15 @@ function actionTrimEndToPlayhead() {
   return true;
 }
 function actionDeleteSelected() {
+  if (state.selectedAnnotationId) {
+    const selected = state.annotations.find(a => a.id === state.selectedAnnotationId);
+    if (selected && laneConfig('annotation', selected.lane || 0).locked) return false;
+    commitHistory();
+    state.annotations = state.annotations.filter(a => a.id !== state.selectedAnnotationId);
+    state.selectedAnnotationId = null;
+    updateAnnotationUI(); requestRender();
+    return true;
+  }
   if (state.selectedId) {
     commitHistory();
     state.events = state.events.filter(e => e.id !== state.selectedId);
@@ -2941,8 +3067,16 @@ function actionDeleteSelected() {
 }
 
 function duplicateSelection() {
-  commitHistory();
   const offset = 0.2;
+  if (state.selectedAnnotationId) {
+    const source = state.annotations.find(a => a.id === state.selectedAnnotationId);
+    if (!source || laneConfig('annotation', source.lane || 0).locked) return;
+    commitHistory();
+    const duration = outputDuration();
+    const copy = ZoomCutCore.normalizeAnnotation({ ...source, id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, outStart: Math.min(Math.max(0, duration - source.outDuration), source.outStart + offset) }, duration);
+    state.annotations.push(copy); selectOnly('annotation', copy.id); updateAnnotationUI(); requestRender(); return;
+  }
+  commitHistory();
   if (state.selectedVideoId) {
     const source = state.videoClips.find(x => x.id === state.selectedVideoId);
     if (!source) return;
@@ -3039,6 +3173,257 @@ function setTimelineZoom(next) {
   state.timelineZoom = Math.min(8, Math.max(1, next));
   updateTimelineScale(anchor);
 }
+function setAnnotationTool(tool) {
+  state.annotationTool = tool === 'select' ? null : tool;
+  document.querySelectorAll('.annotation-tool').forEach(button => {
+    const active = button.dataset.annotationTool === (state.annotationTool || 'select');
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  canvas.classList.toggle('annotation-cursor', Boolean(state.annotationTool));
+}
+$('annotationToolGrid')?.addEventListener('click', e => {
+  const button = e.target.closest('[data-annotation-tool]');
+  if (button) setAnnotationTool(button.dataset.annotationTool);
+});
+setAnnotationTool(state.annotationTool);
+$('addAnnotationLane')?.addEventListener('click', () => { state.annotationLaneCount = Math.min(32, state.annotationLaneCount + 1); updateAnnotationUI(); markProjectDirty(); });
+
+function annotationLabel(type) {
+  const labels = state.lang === 'th'
+    ? { text: 'ข้อความ', arrow: 'ลูกศร', rectangle: 'กรอบ', highlight: 'ไฮไลต์', blur: 'เบลอ' }
+    : { text: 'Text', arrow: 'Arrow', rectangle: 'Frame', highlight: 'Highlight', blur: 'Blur' };
+  return labels[type] || type;
+}
+function annotationDuration(a) { return Math.max(0.05, Number(a.outDuration ?? a.duration ?? 3)); }
+function annotationStart(a) { return Math.max(0, Number(a.outStart ?? a.start ?? 0)); }
+function annotationTimelineTimeFromX(x, bounds) {
+  const sourceTime = clamp((x - bounds.left) / Math.max(1, bounds.width), 0, 1) * video.duration;
+  return sourceToOutputTime(sourceTime);
+}
+function updateAnnotationUI() {
+  const group = $('annotationTrackGroup');
+  if (!group) return;
+  group.innerHTML = '';
+  const duration = outputDuration();
+  if (!video.duration || !duration) return;
+  const needed = Math.max(1, state.annotationLaneCount || 1, ...state.annotations.map(a => (a.lane || 0) + 1));
+  state.annotationLaneCount = Math.min(32, needed);
+  for (let lane = 0; lane < needed; lane++) {
+    const row = document.createElement('div'); row.className = 'lane-row annotation-lane-row';
+    const name = state.lang === 'th' ? `มาร์กอัป ${lane + 1}` : `Annotations ${lane + 1}`;
+    const cfg = laneConfig('annotation', lane);
+    const lockLabel = state.lang === 'th' ? 'ล็อกเลน' : 'Lock lane';
+    const hideLabel = state.lang === 'th' ? 'ซ่อนเลน' : 'Hide lane';
+    row.innerHTML = `<div class="lane-label" data-lane-base="annotation"><span class="lane-kind" aria-hidden="true">✦</span><span class="lane-name" title="${name}">${name}</span><span class="lane-controls"><button class="lane-tool lock${cfg.locked ? ' active' : ''}" data-lane-action="locked" title="${lockLabel}" aria-label="${lockLabel}" aria-pressed="${cfg.locked}"></button><button class="lane-tool visibility${cfg.hidden ? ' active' : ''}" data-lane-action="hidden" title="${hideLabel}" aria-label="${hideLabel}" aria-pressed="${cfg.hidden}">${cfg.hidden ? '○' : '●'}</button></span></div><div class="annotation-track" data-lane="${lane}"></div>`;
+    const track = row.querySelector('.annotation-track');
+    for (const a of state.annotations.filter(x => (x.lane || 0) === lane)) {
+      const el = document.createElement('div');
+      const start = annotationStart(a), dur = annotationDuration(a);
+      const sourceStart = outputToSourceTime(start), sourceEnd = outputToSourceTime(start + dur);
+      el.className = `annotation-clip${a.id === state.selectedAnnotationId ? ' selected' : ''}`;
+      el.style.left = `${sourceStart / video.duration * 100}%`; el.style.width = `${Math.max(.6, (sourceEnd - sourceStart) / video.duration * 100)}%`;
+      el.dataset.id = String(a.id); el.setAttribute('role', 'button'); el.tabIndex = 0;
+      el.setAttribute('aria-label', `${annotationLabel(a.type)} ${fmtTime(start)}–${fmtTime(start + dur)}`);
+      el.innerHTML = `<span class="annotation-handle left" data-edge="left"></span><span class="annotation-label">${escapeHtml(annotationLabel(a.type))}${a.type === 'text' && a.text ? ` · ${escapeHtml(a.text)}` : ''}</span><span class="annotation-handle right" data-edge="right"></span>`;
+      track.appendChild(el);
+    }
+    group.appendChild(row);
+  }
+  const selected = state.annotations.find(a => a.id === state.selectedAnnotationId);
+  const panel = $('annotationEdit');
+  if (!selected) { panel.classList.remove('visible'); return; }
+  panel.classList.add('visible');
+  const locked = laneConfig('annotation', selected.lane || 0).locked;
+  panel.classList.toggle('lane-locked', locked);
+  ['annotationType', 'annotationText', 'annotationFontFamily', 'annotationAlign', 'annotationColor', 'annotationFontSize', 'annotationOpacity', 'annotationStart', 'annotationDuration', 'annotationLane', 'annotationDuplicate', 'annotationDelete']
+    .forEach(id => { const control = $(id); if (control) control.disabled = locked; });
+  $('annotationEditLabel').textContent = `✦ ${annotationLabel(selected.type)} · ${fmtTime(annotationStart(selected))}–${fmtTime(annotationStart(selected) + annotationDuration(selected))}`;
+  $('annotationType').value = selected.type;
+  $('annotationText').value = selected.text || '';
+  $('annotationTextWrap').style.display = selected.type === 'text' ? '' : 'none';
+  $('annotationTextStyleWrap').style.display = selected.type === 'text' ? '' : 'none';
+  $('annotationAlignWrap').style.display = selected.type === 'text' ? '' : 'none';
+  $('annotationFontFamily').value = selected.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+  $('annotationAlign').value = selected.align || 'left';
+  $('annotationFontWrap').style.display = selected.type === 'text' ? '' : 'none';
+  $('annotationColor').value = /^#[0-9a-f]{6}$/i.test(selected.color || '') ? selected.color : '#8ea2ff';
+  $('annotationFontSize').value = (selected.fontSize || .045) * 100;
+  $('annotationFontSizeVal').textContent = `${((selected.fontSize || .045) * 100).toFixed(1)}%`;
+  $('annotationOpacity').value = selected.opacity ?? 1; $('annotationOpacityVal').textContent = `${Math.round((selected.opacity ?? 1) * 100)}%`;
+  const maxStart = Math.max(0, duration - annotationDuration(selected));
+  $('annotationStart').max = String(Math.max(.01, duration)); $('annotationStart').value = annotationStart(selected); $('annotationStartVal').textContent = fmtTime(annotationStart(selected));
+  $('annotationDuration').max = String(Math.max(.05, duration - annotationStart(selected))); $('annotationDuration').value = annotationDuration(selected); $('annotationDurationVal').textContent = `${annotationDuration(selected).toFixed(2)}s`;
+  renderLaneOptions($('annotationLane'), state.annotationLaneCount, selected.lane || 0, 'annotationLane');
+}
+
+function selectedAnnotation() { return state.annotations.find(a => a.id === state.selectedAnnotationId) || null; }
+function syncAnnotationTiming(annotation, start, duration) {
+  const total = outputDuration();
+  annotation.outStart = clamp(Number(start) || 0, 0, Math.max(0, total - .05));
+  annotation.outDuration = clamp(Number(duration) || .05, .05, Math.max(.05, total - annotation.outStart));
+  annotation.start = annotation.outStart; annotation.duration = annotation.outDuration;
+}
+function updateSelectedAnnotation(key, value) {
+  const a = selectedAnnotation(); if (!a) return;
+  commitHistory(); a[key] = value; updateAnnotationUI(); requestRender();
+}
+['annotationType', 'annotationColor', 'annotationOpacity', 'annotationFontSize', 'annotationStart', 'annotationDuration', 'annotationLane', 'annotationFontFamily', 'annotationAlign'].forEach(id => {
+  $(id)?.addEventListener(id === 'annotationText' ? 'input' : 'input', e => {
+    const a = selectedAnnotation(); if (!a) return;
+    if (laneConfig('annotation', a.lane || 0).locked) return;
+    const idKey = id.replace(/^annotation/, '').replace(/^./, c => c.toLowerCase());
+    if (id === 'annotationType') a.type = e.target.value;
+    else if (id === 'annotationColor') a.color = e.target.value;
+    else if (id === 'annotationOpacity') a.opacity = parseFloat(e.target.value);
+    else if (id === 'annotationFontSize') a.fontSize = parseFloat(e.target.value) / 100;
+    else if (id === 'annotationStart') syncAnnotationTiming(a, parseFloat(e.target.value), annotationDuration(a));
+    else if (id === 'annotationDuration') syncAnnotationTiming(a, annotationStart(a), parseFloat(e.target.value));
+    else if (id === 'annotationLane') {
+      const nextLane = parseInt(e.target.value, 10) || 0;
+      if (laneConfig('annotation', nextLane).locked) { updateAnnotationUI(); return; }
+      a.lane = nextLane;
+    }
+    else if (id === 'annotationFontFamily') a.fontFamily = e.target.value;
+    else if (id === 'annotationAlign') a.align = e.target.value;
+    a.type = ZoomCutCore.ANNOTATION_TYPES.has(a.type) ? a.type : 'text';
+    a.duration = a.outDuration; a.start = a.outStart;
+    markProjectDirty(); updateAnnotationUI(); requestRender();
+  });
+});
+$('annotationFontFamily')?.addEventListener('change', e => { const a = selectedAnnotation(); if (!a || laneConfig('annotation', a.lane || 0).locked) return; a.fontFamily = e.target.value; markProjectDirty(); requestRender(); });
+$('annotationAlign')?.addEventListener('change', e => { const a = selectedAnnotation(); if (!a || laneConfig('annotation', a.lane || 0).locked) return; a.align = e.target.value; markProjectDirty(); requestRender(); });
+$('annotationText')?.addEventListener('input', e => { const a = selectedAnnotation(); if (!a || laneConfig('annotation', a.lane || 0).locked) return; a.text = e.target.value; markProjectDirty(); requestRender(); });
+$('annotationDelete')?.addEventListener('click', () => actionDeleteSelected());
+$('annotationDuplicate')?.addEventListener('click', () => duplicateSelection());
+$('annotationClose')?.addEventListener('click', clearSelection);
+
+let annotationDrag = null;
+$('annotationTrackGroup')?.addEventListener('pointerdown', e => {
+  const clip = e.target.closest('.annotation-clip');
+  if (!clip) return;
+  const a = state.annotations.find(item => String(item.id) === clip.dataset.id); if (!a) return;
+  selectOnly('annotation', a.id);
+  if (laneConfig('annotation', a.lane || 0).locked) { updateAnnotationUI(); return; }
+  const track = clip.closest('.annotation-track'), bounds = track.getBoundingClientRect();
+  const clipBounds = clip.getBoundingClientRect();
+  // Keep trim discoverable even when a pointer lands a few pixels beside the
+  // narrow visual handle. This matters for overlapping clips and trackpad use.
+  const targetEdge = e.target.closest('.annotation-handle')?.dataset.edge || null;
+  const edgeHitSize = Math.min(32, Math.max(14, clipBounds.width * 0.12));
+  const nearLeft = e.clientX - clipBounds.left <= edgeHitSize;
+  const nearRight = clipBounds.right - e.clientX <= edgeHitSize;
+  const edge = targetEdge || (nearLeft ? 'left' : nearRight ? 'right' : null);
+  const time = annotationTimelineTimeFromX(e.clientX, bounds);
+  annotationDrag = { a, edge, offset: time - annotationStart(a), duration: annotationDuration(a), end: annotationStart(a) + annotationDuration(a) };
+  commitHistory();
+  $('annotationTrackGroup').setPointerCapture(e.pointerId); updateAnnotationUI();
+});
+$('annotationTrackGroup')?.addEventListener('pointermove', e => {
+  if (!annotationDrag) return;
+  const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.annotation-track') || $('annotationTrackGroup').querySelector('.annotation-track');
+  const time = annotationTimelineTimeFromX(e.clientX, track.getBoundingClientRect());
+  if (annotationDrag.edge === 'left') {
+    const start = Math.min(time, annotationDrag.end - .05);
+    syncAnnotationTiming(annotationDrag.a, start, annotationDrag.end - start);
+  } else if (annotationDrag.edge === 'right') {
+    syncAnnotationTiming(annotationDrag.a, annotationStart(annotationDrag.a), Math.max(.05, time - annotationStart(annotationDrag.a)));
+  }
+  else syncAnnotationTiming(annotationDrag.a, time - annotationDrag.offset, annotationDrag.duration);
+  video.currentTime = outputToSourceTime(annotationStart(annotationDrag.a)); markProjectDirty(); updateAnnotationUI(); requestRender();
+});
+$('annotationTrackGroup')?.addEventListener('pointerup', () => { annotationDrag = null; });
+$('annotationTrackGroup')?.addEventListener('pointercancel', () => { annotationDrag = null; });
+$('annotationTrackGroup')?.addEventListener('keydown', e => {
+  if (!['Enter', ' '].includes(e.key)) return;
+  const clip = e.target.closest('.annotation-clip'); if (!clip) return;
+  const a = state.annotations.find(item => String(item.id) === clip.dataset.id); if (!a) return;
+  e.preventDefault(); selectOnly('annotation', a.id); updateAnnotationUI(); requestRender();
+});
+bindLaneTools('annotationTrackGroup', 'annotation', updateAnnotationUI);
+
+function annotationAtCanvasPoint(x, y, L, cam) {
+  const c = L.content, m = rawMedia(), sr = sourceRect(cam);
+  if (!m) return null;
+  for (let i = state.annotations.length - 1; i >= 0; i--) {
+    const a = state.annotations[i];
+    if (!ZoomCutCore.annotationActive(a, annotationOutputTime()) || !laneEnabled('annotation', a.lane || 0)) continue;
+    const rect = annotationCanvasRect(a, c, m, sr);
+    if (x >= rect.x - 8 && x <= rect.x + rect.w + 8 && y >= rect.y - 8 && y <= rect.y + rect.h + 8) return { a, rect };
+  }
+  return null;
+}
+function annotationCanvasPointer(e) {
+  const bounds = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - bounds.left) / Math.max(1, bounds.width) * canvas.width,
+    y: (e.clientY - bounds.top) / Math.max(1, bounds.height) * canvas.height,
+    scale: canvas.width / Math.max(1, bounds.width),
+  };
+}
+canvas.addEventListener('pointerdown', e => {
+  if (!state.loaded || state.exporting || state.mode !== 'video') return;
+  const pointer = annotationCanvasPointer(e);
+  const L = layout(), c = L.content; if (pointer.x < c.x || pointer.x > c.x + c.w || pointer.y < c.y || pointer.y > c.y + c.h) return;
+  const m = rawMedia(), cam = cameraAt(video.currentTime), sr = sourceRect(cam);
+  if (!state.annotationTool) {
+    const hit = annotationAtCanvasPoint(pointer.x, pointer.y, L, cam);
+    if (!hit) return;
+    selectOnly('annotation', hit.a.id);
+    if (laneConfig('annotation', hit.a.lane || 0).locked) { updateAnnotationUI(); return; }
+    commitHistory();
+    const p = ZoomCutCore.canvasPointToSourceNorm(m, sr, c, pointer);
+    const resizeHit = 18 * pointer.scale;
+    annotationDrag = { canvas: true, a: hit.a, startPoint: p, origin: { x: hit.a.x, y: hit.a.y, x2: hit.a.x2, y2: hit.a.y2, width: hit.a.width, height: hit.a.height }, resize: e.shiftKey && (pointer.x > hit.rect.x + hit.rect.w - resizeHit && pointer.y > hit.rect.y + hit.rect.h - resizeHit) };
+    canvas.setPointerCapture(e.pointerId); updateAnnotationUI(); e.preventDefault(); return;
+  }
+  // Recovery files can under-report the lane count while still carrying
+  // annotations on later lanes. The state model remains the sole lock source.
+  const laneCount = Math.min(32, Math.max(
+    1,
+    Number(state.annotationLaneCount) || 1,
+    ...state.annotations.map(item => Math.max(0, Number(item.lane) || 0) + 1),
+  ));
+  const createLane = Array.from({ length: laneCount }, (_, lane) => lane)
+    .find(lane => !laneConfig('annotation', lane).locked);
+  if (createLane === undefined) return;
+  commitHistory();
+  const p = ZoomCutCore.canvasPointToSourceNorm(m, sr, c, pointer);
+  const total = outputDuration(), start = annotationOutputTime(), duration = Math.min(3, Math.max(.05, total - start));
+  const a = ZoomCutCore.normalizeAnnotation({ id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, type: state.annotationTool, lane: createLane, outStart: start, outDuration: duration, x: p.x, y: p.y, x2: p.x, y2: p.y, width: .25, height: .14, text: state.lang === 'th' ? 'พิมพ์ข้อความ' : 'Type text' }, total);
+  a.lane = createLane;
+  state.annotations.push(a); selectOnly('annotation', a.id); annotationDrag = { canvas: true, a, startPoint: p, creating: true };
+  canvas.setPointerCapture(e.pointerId); updateAnnotationUI(); e.preventDefault();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!annotationDrag?.canvas) return;
+  const L = layout(), c = L.content, m = rawMedia(), cam = cameraAt(video.currentTime), sr = sourceRect(cam), p = ZoomCutCore.canvasPointToSourceNorm(m, sr, c, annotationCanvasPointer(e));
+  const a = annotationDrag.a;
+  if (annotationDrag.creating) {
+    if (a.type === 'arrow') { a.x2 = p.x; a.y2 = p.y; }
+    else {
+      const x2 = clamp(p.x, 0, 1), y2 = clamp(p.y, 0, 1), x1 = annotationDrag.startPoint.x, y1 = annotationDrag.startPoint.y;
+      a.x = Math.min(x1, x2); a.y = Math.min(y1, y2); a.width = Math.max(.01, Math.abs(x2 - x1)); a.height = Math.max(.01, Math.abs(y2 - y1));
+    }
+  } else if (annotationDrag.resize) {
+    if (a.type === 'arrow') { a.x2 = p.x; a.y2 = p.y; }
+    else { a.width = clamp(p.x - a.x, .01, 1 - a.x); a.height = clamp(p.y - a.y, .01, 1 - a.y); }
+  } else {
+    const origin = annotationDrag.origin, rawDx = p.x - annotationDrag.startPoint.x, rawDy = p.y - annotationDrag.startPoint.y;
+    if (a.type === 'arrow') {
+      const dx = clamp(rawDx, -Math.min(origin.x, origin.x2), 1 - Math.max(origin.x, origin.x2));
+      const dy = clamp(rawDy, -Math.min(origin.y, origin.y2), 1 - Math.max(origin.y, origin.y2));
+      a.x = origin.x + dx; a.y = origin.y + dy; a.x2 = origin.x2 + dx; a.y2 = origin.y2 + dy;
+    } else {
+      a.x = clamp(origin.x + rawDx, 0, Math.max(0, 1 - (origin.width || .01)));
+      a.y = clamp(origin.y + rawDy, 0, Math.max(0, 1 - (origin.height || .01)));
+    }
+  }
+  markProjectDirty(); updateAnnotationUI(); requestRender();
+});
+canvas.addEventListener('pointerup', () => { if (annotationDrag?.canvas) { annotationDrag = null; updateAnnotationUI(); } });
+canvas.addEventListener('pointercancel', () => { if (annotationDrag?.canvas) { annotationDrag = null; updateAnnotationUI(); } });
+
 $('addVideoLane').onclick = () => { state.videoLaneCount++; updateSegUI(); };
 $('addVoiceLane').onclick = () => { state.voiceLaneCount++; updateVoiceUI(); };
 $('addCameraLane').onclick = () => { state.cameraLaneCount++; updateCameraUI(); };
@@ -3317,6 +3702,7 @@ function updateTimelineUI() {
   }
   $('zoomCount').textContent = state.events.length ? tr('zoomPoints', state.events.length) : '';
   updateMarkerEditUI();
+  updateAnnotationUI();
   updatePlayheadUI();
 }
 
@@ -3436,6 +3822,7 @@ $('newBtn').onclick = () => {
     voiceovers: [], selectedVoiceId: null,
     facecams: [], selectedFaceId: null,
     cursorPoints: [], annotations: [], annotationLaneCount: 1,
+    annotationTool: null, selectedAnnotationId: null,
     segments: [], selectedSeg: null,
     videoLaneCount: 1,
     voiceLaneCount: 1,
@@ -3445,6 +3832,7 @@ $('newBtn').onclick = () => {
     timelineZoom: 1,
     baseMedia: null, projectPath: null, projectCreatedAt: null, dirty: false,
   });
+  setAnnotationTool(null);
   clearTimeout(autosaveTimer);
   if (desktop) desktop.project.clearRecovery().catch(() => {});
   if (desktop) desktop.project.resetCurrent().catch(() => {});

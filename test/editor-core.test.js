@@ -183,3 +183,53 @@ test('project validation rejects non-string clip media paths', () => {
   };
   assert.throws(() => core.validateProject(project), /invalid media path/);
 });
+
+test('annotations normalize to explicit output timing and remain active on the output timeline', () => {
+  const annotation = core.normalizeAnnotation({ id: 'a', type: 'blur', start: 2, duration: 4, x: -.2, y: .4, width: 2 }, 5);
+  assert.equal(annotation.outStart, 2);
+  assert.equal(annotation.outDuration, 3);
+  assert.equal(core.annotationActive(annotation, 2), true);
+  assert.equal(core.annotationActive(annotation, 4.99), true);
+  assert.equal(core.annotationActive(annotation, 5), false);
+  assert.equal(annotation.x, 0);
+  assert.equal(annotation.width, 1);
+});
+
+test('annotation timing maps against output duration when segments are cut or sped up', () => {
+  const segments = [{ id: 1, start: 0, end: 4, speed: 2 }, { id: 2, start: 8, end: 10, speed: .5 }];
+  assert.equal(core.outputDuration(segments), 6);
+  assert.equal(core.sourceToOutputTime(segments, 2), 1);
+  assert.equal(core.sourceToOutputTime(segments, 9), 4);
+  assert.equal(core.outputToSourceTime(segments, 1), 2);
+  assert.equal(core.outputToSourceTime(segments, 5), 9.5);
+  assert.equal(core.sourceToOutputTime(segments, -1), 0);
+  assert.equal(core.sourceToOutputTime(segments, 6), 2);
+  assert.equal(core.sourceToOutputTime(segments, 12), 6);
+});
+
+test('annotations created at the output end remain visible for their minimum duration', () => {
+  const annotation = core.normalizeAnnotation({ type: 'text', outStart: 5, outDuration: 1 }, 5);
+  assert.equal(annotation.outStart, 4.95);
+  assert.equal(annotation.outDuration, 0.05);
+  assert.equal(core.annotationActive(annotation, 4.975), true);
+});
+
+test('project validation normalizes untrusted lane settings for every lane kind', () => {
+  const project = {
+    format: 'zoomcut-project', version: 2, baseMedia: { sourcePath: '/tmp/base.mp4' },
+    settings: { laneSettings: { video: { malformed: true }, annotation: [{ locked: 1, hidden: 0, extra: 'drop' }] } },
+    state: { segments: [{ start: 0, end: 1 }] },
+  };
+  core.validateProject(project);
+  assert.deepEqual(project.settings.laneSettings.video, []);
+  assert.deepEqual(project.settings.laneSettings.annotation, [{ locked: true, muted: false, solo: false, hidden: false }]);
+});
+
+test('annotation geometry uses inverse source rect mapping in full-source normalized space', () => {
+  const media = { w: 1000, h: 2000 };
+  const sourceRect = { sx: 250, sy: 500, sw: 500, sh: 1000 };
+  const content = { x: 100, y: 50, w: 400, h: 800 };
+  const source = core.canvasPointToSourceNorm(media, sourceRect, content, { x: 300, y: 450 });
+  assert.deepEqual(source, { x: .5, y: .5 });
+  assert.deepEqual(core.sourceRectToCanvasPoint(media, sourceRect, content, source), { x: 300, y: 450 });
+});

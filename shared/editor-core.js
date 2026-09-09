@@ -22,13 +22,23 @@
   // Keep this aligned with scrubProjectValue's generic array ceiling so the
   // field-specific error and the documented recording cap cannot disagree.
   const MAX_CURSOR_POINTS = MAX_PROJECT_ARRAY;
-  const MAX_ANNOTATIONS = 10000;
+  // Canvas annotations are evaluated and painted every frame. Keep the
+  // document ceiling high enough for long projects without allowing a loaded
+  // project to force tens of thousands of canvas operations per frame.
+  const MAX_ANNOTATIONS = 1000;
   const MAX_SHORTCUTS = 64;
   const CURSOR_STYLES = new Set(['soft', 'outline', 'classic', 'shadow', 'solid', 'dot', 'pointer']);
   const CLICK_EFFECTS = new Set(['none', 'ripple', 'ring', 'pulse', 'target']);
   const BACKGROUND_TYPES = new Set(['preset', 'custom', 'image', 'transparent', 'color', 'gradient']);
   const FRAME_TYPES = new Set(['none', 'iphone', 'browser']);
   const ANNOTATION_TYPES = new Set(['text', 'arrow', 'rectangle', 'highlight', 'blur']);
+  const ANNOTATION_DEFAULTS = Object.freeze({
+    text: { color: '#f4f6ff', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif', fontSize: 0.045, align: 'left', opacity: 1 },
+    arrow: { color: '#8ea2ff', strokeWidth: 0.006, opacity: 1 },
+    rectangle: { color: '#8ea2ff', strokeWidth: 0.006, opacity: 1 },
+    highlight: { color: '#ffd166', opacity: 0.34 },
+    blur: { opacity: 1, blur: 18 },
+  });
   const DEFAULT_CURSOR_SETTINGS = Object.freeze({
     enabled: true,
     style: 'soft',
@@ -265,8 +275,11 @@
         throw new Error('annotations contains an invalid type');
       }
       annotation.start = Math.max(0, finite(annotation.start));
-      annotation.duration = Math.max(0.05, finite(annotation.duration,
-        annotation.end === undefined ? 3 : finite(annotation.end) - annotation.start));
+      annotation.outStart = Math.max(0, finite(annotation.outStart, finite(annotation.start)));
+      annotation.outDuration = Math.max(0.05, finite(annotation.outDuration,
+        finite(annotation.duration, annotation.end === undefined ? 3 : finite(annotation.end) - annotation.start)));
+      annotation.duration = annotation.outDuration;
+      annotation.start = annotation.outStart;
       delete annotation.end;
       annotation.lane = Math.max(0, Math.min(31, Math.floor(finite(annotation.lane, 0))));
       annotation.coordinateSpace = 'source';
@@ -276,6 +289,12 @@
       for (const key of ['width', 'height']) {
         if (annotation[key] !== undefined) annotation[key] = clampNumber(annotation[key], 0, 1, 0);
       }
+      if (annotation.type === 'text' && annotation.text === undefined) annotation.text = '';
+      if (annotation.fontSize !== undefined) annotation.fontSize = clampNumber(annotation.fontSize, 0.008, 0.25, ANNOTATION_DEFAULTS.text.fontSize);
+      if (annotation.strokeWidth !== undefined) annotation.strokeWidth = clampNumber(annotation.strokeWidth, 0.001, 0.05, ANNOTATION_DEFAULTS.arrow.strokeWidth);
+      if (annotation.opacity !== undefined) annotation.opacity = clampNumber(annotation.opacity, 0, 1, 1);
+      if (annotation.blur !== undefined) annotation.blur = clampNumber(annotation.blur, 0, 80, 18);
+      if (annotation.align !== undefined && !['left', 'center', 'right'].includes(annotation.align)) annotation.align = 'left';
       for (const key of ['text', 'color', 'fontFamily']) {
         if (annotation[key] !== undefined && (typeof annotation[key] !== 'string' || annotation[key].length > MAX_PROJECT_STRING)) {
           throw new Error(`annotations contains an invalid ${key}`);
@@ -283,6 +302,105 @@
       }
     }
     return value;
+  }
+
+  function validateLaneSettings(value) {
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const output = {};
+    for (const kind of ['video', 'voice', 'camera', 'annotation']) {
+      const lanes = Array.isArray(input[kind]) ? input[kind].slice(0, 128) : [];
+      output[kind] = lanes.map(lane => ({
+        locked: Boolean(lane?.locked),
+        muted: Boolean(lane?.muted),
+        solo: Boolean(lane?.solo),
+        hidden: Boolean(lane?.hidden),
+      }));
+    }
+    return output;
+  }
+
+  function normalizeAnnotation(annotation, outputDuration = Infinity) {
+    const input = annotation && typeof annotation === 'object' ? annotation : {};
+    const type = ANNOTATION_TYPES.has(input.type) ? input.type : 'text';
+    const defaults = ANNOTATION_DEFAULTS[type] || {};
+    const latestStart = Number.isFinite(outputDuration) ? Math.max(0, outputDuration - 0.05) : Number.MAX_SAFE_INTEGER;
+    const start = clampNumber(input.outStart, 0, latestStart, clampNumber(input.start, 0, latestStart, 0));
+    const duration = clampNumber(input.outDuration, 0.05, Number.MAX_SAFE_INTEGER, clampNumber(input.duration, 0.05, Number.MAX_SAFE_INTEGER, 3));
+    const end = Number.isFinite(outputDuration) ? Math.min(outputDuration, start + duration) : start + duration;
+    return {
+      id: input.id ?? `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type,
+      outStart: start,
+      outDuration: Math.max(0.05, end - start),
+      start,
+      duration: Math.max(0.05, end - start),
+      lane: Math.max(0, Math.min(31, Math.floor(finite(input.lane, 0)))),
+      coordinateSpace: 'source',
+      x: clampNumber(input.x, 0, 1, 0.2), y: clampNumber(input.y, 0, 1, 0.2),
+      x2: clampNumber(input.x2, 0, 1, clampNumber(input.x, 0, 1, 0.2) + 0.2),
+      y2: clampNumber(input.y2, 0, 1, clampNumber(input.y, 0, 1, 0.2) + 0.2),
+      width: clampNumber(input.width, 0.01, 1, 0.25), height: clampNumber(input.height, 0.01, 1, 0.14),
+      text: typeof input.text === 'string' ? input.text.slice(0, MAX_PROJECT_STRING) : '',
+      color: typeof input.color === 'string' ? input.color.slice(0, 64) : (defaults.color || '#8ea2ff'),
+      fontFamily: typeof input.fontFamily === 'string' ? input.fontFamily.slice(0, 128) : (defaults.fontFamily || '-apple-system, sans-serif'),
+      fontSize: clampNumber(input.fontSize, 0.008, 0.25, defaults.fontSize || 0.045),
+      align: ['left', 'center', 'right'].includes(input.align) ? input.align : (defaults.align || 'left'),
+      strokeWidth: clampNumber(input.strokeWidth, 0.001, 0.05, defaults.strokeWidth || 0.006),
+      opacity: clampNumber(input.opacity, 0, 1, defaults.opacity === undefined ? 1 : defaults.opacity),
+      blur: clampNumber(input.blur, 0, 80, defaults.blur || 18),
+    };
+  }
+
+  function annotationActive(annotation, outputTime) {
+    const start = finite(annotation?.outStart, finite(annotation?.start, 0));
+    const duration = Math.max(0, finite(annotation?.outDuration, finite(annotation?.duration, 0)));
+    const t = finite(outputTime, 0);
+    return duration > 0 && t >= start - 1e-6 && t < start + duration - 1e-6;
+  }
+
+  function outputDuration(segments) {
+    return (segments || []).reduce((total, segment) => total + Math.max(0, finite(segment?.end) - finite(segment?.start)) / Math.max(0.05, finite(segment?.speed, 1)), 0);
+  }
+
+  function sourceToOutputTime(segments, sourceTime) {
+    const t = Math.max(0, finite(sourceTime));
+    let out = 0;
+    for (const segment of segments || []) {
+      const start = finite(segment?.start), end = Math.max(start, finite(segment?.end, start));
+      const speed = Math.max(0.05, finite(segment?.speed, 1));
+      if (t < start - 1e-3) return out;
+      if (t >= start - 1e-3 && t <= end + 1e-3) return out + Math.max(0, Math.min(end, t) - start) / speed;
+      out += (end - start) / speed;
+    }
+    return Math.max(0, Math.min(outputDuration(segments), out));
+  }
+
+  function outputToSourceTime(segments, outputTime) {
+    let cursor = 0;
+    const t = Math.max(0, finite(outputTime));
+    for (const segment of segments || []) {
+      const start = finite(segment?.start), end = Math.max(start, finite(segment?.end, start));
+      const speed = Math.max(0.05, finite(segment?.speed, 1));
+      const length = (end - start) / speed;
+      if (t <= cursor + length + 1e-3) return Math.min(end, start + Math.max(0, t - cursor) * speed);
+      cursor += length;
+    }
+    const last = (segments || []).at(-1);
+    return last ? Math.max(finite(last.start), finite(last.end, last.start)) : 0;
+  }
+
+  function sourceRectToCanvasPoint(media, sourceRect, content, point) {
+    const m = media || { w: 1, h: 1 };
+    const sr = sourceRect || { sx: 0, sy: 0, sw: m.w, sh: m.h };
+    const c = content || { x: 0, y: 0, w: 1, h: 1 };
+    return { x: c.x + (clampNumber(point?.x, 0, 1, 0) * m.w - sr.sx) / sr.sw * c.w, y: c.y + (clampNumber(point?.y, 0, 1, 0) * m.h - sr.sy) / sr.sh * c.h };
+  }
+
+  function canvasPointToSourceNorm(media, sourceRect, content, point) {
+    const m = media || { w: 1, h: 1 };
+    const sr = sourceRect || { sx: 0, sy: 0, sw: m.w, sh: m.h };
+    const c = content || { x: 0, y: 0, w: 1, h: 1 };
+    return { x: clampNumber((sr.sx + ((finite(point?.x) - c.x) / c.w) * sr.sw) / m.w, 0, 1, 0), y: clampNumber((sr.sy + ((finite(point?.y) - c.y) / c.h) * sr.sh) / m.h, 0, 1, 0) };
   }
 
   function validateProject(document) {
@@ -326,6 +444,7 @@
     document.settings.frameStyle = defaultFrameStyle(document.settings.frameStyle, document.settings);
     document.settings.cursorSettings = validateCursorSettings(document.settings.cursorSettings);
     document.settings.shortcuts = validateShortcuts(document.settings.shortcuts || {});
+    document.settings.laneSettings = validateLaneSettings(document.settings.laneSettings);
     for (const segment of document.state.segments) {
       if (!segment || typeof segment !== 'object') throw new Error('Timeline segment is invalid');
       segment.start = Math.max(0, finite(segment.start));
@@ -407,7 +526,10 @@
   }
 
   return {
-    PROJECT_VERSION, LEGACY_PROJECT_VERSION, SETTINGS_FIELDS, DEFAULT_CURSOR_SETTINGS,
+    PROJECT_VERSION, LEGACY_PROJECT_VERSION, SETTINGS_FIELDS, DEFAULT_CURSOR_SETTINGS, ANNOTATION_TYPES, ANNOTATION_DEFAULTS,
     plainClip, createProject, collectMediaPaths, migrateProject, validateProject, snapTime, cursorAt,
+    normalizeAnnotation, annotationActive, annotationActiveAtOutput: annotationActive, annotationIsActive: annotationActive,
+    outputDuration, sourceToOutputTime, outputToSourceTime,
+    sourceRectToCanvasPoint, canvasPointToSourceNorm,
   };
 });

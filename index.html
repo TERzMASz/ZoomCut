@@ -875,6 +875,7 @@
     <button class="rail-tool" data-shell-panel="audio" title="Audio"><i data-lucide="audio-lines"></i><span data-rail-label="audio">เสียง</span></button>
     <button class="rail-tool" data-shell-panel="camera" title="Camera"><i data-lucide="camera"></i><span data-rail-label="camera">กล้อง</span></button>
     <button class="rail-tool" data-shell-panel="clicks" title="Click and zoom"><i data-lucide="mouse-pointer-click"></i><span data-rail-label="clicks">คลิก</span></button>
+    <button class="rail-tool" data-shell-panel="annotations" title="Annotations"><i data-lucide="pen-line"></i><span data-rail-label="annotations">มาร์กอัป</span></button>
     <button class="rail-tool" data-shell-panel="style" title="Style"><i data-lucide="palette"></i><span data-rail-label="style">สไตล์</span></button>
     <button class="rail-tool" data-shell-panel="export" title="Export"><i data-lucide="upload"></i><span data-rail-label="export">ส่งออก</span></button>
     <span class="rail-spacer"></span>
@@ -909,6 +910,18 @@
     <div class="shell-panel-intro" data-editor-panel="settings">
       <div class="shell-section-copy"><strong data-shell-copy="settingsTitle">แอปและโปรเจกต์</strong><span data-shell-copy="settingsBody">ภาษา ธีม คีย์ลัด และเครื่องมือตรวจสอบ</span></div>
       <div class="settings-slot" id="settingsSlot"></div>
+    </div>
+    <div class="shell-panel-intro" data-editor-panel="annotations">
+      <div class="shell-section-copy"><strong data-shell-copy="annotationsTitle">มาร์กอัปบนวิดีโอ</strong><span data-shell-copy="annotationsBody">เลือกเครื่องมือแล้วลากบนตัวอย่าง เพื่อเพิ่มข้อความ ลูกศร กรอบ ไฮไลต์ หรือเบลอ</span></div>
+      <div class="annotation-tool-grid" id="annotationToolGrid" role="toolbar" aria-label="Annotation tools">
+        <button class="chip annotation-tool active" type="button" data-annotation-tool="select" title="เลือก">↖ <span>เลือก</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="text" title="ข้อความ">T <span>ข้อความ</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="arrow" title="ลูกศร">↗ <span>ลูกศร</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="rectangle" title="กรอบ">□ <span>กรอบ</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="highlight" title="ไฮไลต์">▱ <span>ไฮไลต์</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="blur" title="เบลอ">◌ <span>เบลอ</span></button>
+      </div>
+      <div class="tip" id="annotationToolTip">ลากบนภาพเพื่อสร้างมาร์กอัปที่ตำแหน่งหัวอ่าน • ยาวเริ่มต้น 3 วินาที</div>
     </div>
     <h3 class="inspector-section-header" id="sectionPreset">Preset</h3>
     <div class="row preset-card-row" data-preset-cards>
@@ -1129,10 +1142,12 @@
             <button class="btn small add-lane-btn" id="addVideoLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Video lane</span></button>
             <button class="btn small add-lane-btn" id="addVoiceLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Voice lane</span></button>
             <button class="btn small add-lane-btn" id="addCameraLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Camera lane</span></button>
+            <button class="btn small add-lane-btn" id="addAnnotationLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Annotation lane</span></button>
           </div>
           <div class="track-group" id="videoTrackGroup"></div>
           <div class="track-group" id="voiceTrackGroup"></div>
           <div class="track-group" id="cameraTrackGroup"></div>
+          <div class="track-group" id="annotationTrackGroup"></div>
         </div>
       </div>
       <div class="marker-edit" id="cameraEdit">
@@ -1193,6 +1208,21 @@
         </span>
         <button class="btn small danger" id="segDelete">🗑 ตัดท่อนนี้ออก</button>
         <button class="btn small panel-close" id="segClose" title="Close">×</button>
+      </div>
+      <div class="marker-edit" id="annotationEdit">
+        <span id="annotationEditLabel">✦ มาร์กอัป</span>
+        <span><label>เครื่องมือ </label><select class="speed-select" id="annotationType"><option value="text">ข้อความ</option><option value="arrow">ลูกศร</option><option value="rectangle">กรอบ</option><option value="highlight">ไฮไลต์</option><option value="blur">เบลอ</option></select></span>
+        <label id="annotationTextWrap">ข้อความ <textarea id="annotationText" rows="3" maxlength="16384" placeholder="พิมพ์ข้อความ…"></textarea></label>
+        <span id="annotationTextStyleWrap"><label>ฟอนต์ </label><select class="speed-select" id="annotationFontFamily"><option value="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">System</option><option value="Arial, sans-serif">Arial</option><option value="Georgia, serif">Georgia</option><option value="ui-monospace, SFMono-Regular, Menlo, monospace">Mono</option></select></span>
+        <span id="annotationAlignWrap"><label>จัดแนว </label><select class="speed-select" id="annotationAlign"><option value="left">ซ้าย</option><option value="center">กลาง</option><option value="right">ขวา</option></select></span>
+        <span><label>สี </label><input type="color" id="annotationColor" value="#8ea2ff"></span>
+        <span id="annotationFontWrap"><label>ขนาด </label><input type="range" id="annotationFontSize" min="1" max="15" step="0.5"><span class="val" id="annotationFontSizeVal">4.5%</span></span>
+        <span><label>ความทึบ </label><input type="range" id="annotationOpacity" min="0" max="1" step="0.05"><span class="val" id="annotationOpacityVal">100%</span></span>
+        <span><label>เริ่ม </label><input type="range" id="annotationStart" min="0" max="1" step="0.01"><span class="val" id="annotationStartVal">0:00</span></span>
+        <span><label>ความยาว </label><input type="range" id="annotationDuration" min="0.05" max="3" step="0.05"><span class="val" id="annotationDurationVal">3.0s</span></span>
+        <span><label>เลน </label><select class="speed-select" id="annotationLane"></select></span>
+        <div class="row"><button class="btn small" id="annotationDuplicate" type="button">คัดลอก</button><button class="btn small danger" id="annotationDelete" type="button">ลบ</button></div>
+        <button class="btn small panel-close" id="annotationClose" title="Close" type="button">×</button>
       </div>
       <div class="marker-edit" id="markerEdit">
         <span>🔍 Zoom marker</span>
