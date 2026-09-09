@@ -179,6 +179,14 @@ const I18N = {
     newConfirm: 'เริ่มงานชิ้นใหม่? งานปัจจุบัน (วิดีโอ จุดซูม trim) จะถูกล้างทั้งหมด',
     unsavedTitle: 'มีการแก้ไขที่ยังไม่ได้บันทึก', unsavedBody: 'ต้องการบันทึกการเปลี่ยนแปลงก่อนดำเนินการต่อหรือไม่?', saveAndContinue: 'บันทึกและดำเนินการต่อ', saveAndClose: 'บันทึกและปิด', discardChanges: 'ปิดต่อโดยไม่บันทึก', cancel: 'ยกเลิก', shortcutCustomize: 'กดปุ่มแล้วกดคีย์ลัดใหม่', shortcutReset: 'คืนค่าเริ่มต้น', shortcutReserved: 'คีย์ลัดนี้สงวนไว้', shortcutConflict: 'คีย์ลัดนี้ถูกใช้แล้ว', shortcutInvalid: 'คีย์ลัดไม่ถูกต้อง',
     oneSegmentRequired: 'ต้องเหลืออย่างน้อย 1 ท่อน',
+    annotationTip: 'ลากบนภาพเพื่อสร้างมาร์กอัปที่ตำแหน่งหัวอ่าน • ยาวเริ่มต้น 3 วินาที',
+    backgroundImageSessionNote: 'รูปพื้นหลังจากไฟล์ใช้ชั่วคราวใน session นี้ — ยังไม่ถูกฝังในไฟล์โปรเจกต์',
+    frameReset: '↺ ล้างเฟรม', debug: '🧭 ดีบัก',
+    previewBack: 'ย้อนหนึ่งเฟรม', previewForward: 'ไปข้างหน้าหนึ่งเฟรม',
+    annotationTool: 'เครื่องมือ', annotationText: 'ข้อความ', annotationFont: 'ฟอนต์', annotationAlign: 'จัดแนว',
+    annotationColor: 'สี', annotationSize: 'ขนาด', annotationOpacity: 'ความทึบ', annotationStart: 'เริ่ม',
+    annotationDuration: 'ความยาว', annotationDuplicate: 'คัดลอก', annotationDelete: 'ลบ', annotationPlaceholder: 'พิมพ์ข้อความ…',
+    alignLeft: 'ซ้าย', alignCenter: 'กลาง', alignRight: 'ขวา',
     exportRemuxing: 'กำลังแปลงไฟล์ให้เล่นได้ลื่น…',
     exportSegment: (i, n, done, total, speed) => `ท่อน ${i}/${n} • ${done} / ${total} — ${speed}x`,
     actionableSuffix: '\n\nถ้าเพิ่งให้สิทธิ์ใน macOS ให้ปิด ZoomCut แล้วเปิดใหม่อีกครั้ง',
@@ -237,6 +245,14 @@ const I18N = {
     newConfirm: 'Start a new project? The current video, zoom points, and trims will be cleared.',
     unsavedTitle: 'Unsaved changes', unsavedBody: 'Save your changes before continuing?', saveAndContinue: 'Save and continue', saveAndClose: 'Save and close', discardChanges: 'Close without saving', cancel: 'Cancel', shortcutCustomize: 'Focus a binding, then press a new shortcut', shortcutReset: 'Reset defaults', shortcutReserved: 'This shortcut is reserved', shortcutConflict: 'This shortcut is already in use', shortcutInvalid: 'Invalid shortcut',
     oneSegmentRequired: 'At least one segment must remain.',
+    annotationTip: 'Drag on the preview to create an annotation at the playhead • Default duration: 3 seconds',
+    backgroundImageSessionNote: 'File-based background images are available for this session only and are not embedded in the project file.',
+    frameReset: '↺ Reset frame', debug: '🧭 Debug',
+    previewBack: 'Previous frame', previewForward: 'Next frame',
+    annotationTool: 'Tool', annotationText: 'Text', annotationFont: 'Font', annotationAlign: 'Align',
+    annotationColor: 'Color', annotationSize: 'Size', annotationOpacity: 'Opacity', annotationStart: 'Start',
+    annotationDuration: 'Duration', annotationDuplicate: 'Duplicate', annotationDelete: 'Delete', annotationPlaceholder: 'Enter text…',
+    alignLeft: 'Left', alignCenter: 'Center', alignRight: 'Right',
     exportRemuxing: 'Converting the file for smooth playback…',
     exportSegment: (i, n, done, total, speed) => `Segment ${i}/${n} • ${done} / ${total} — ${speed}x`,
     actionableSuffix: '\n\nIf you just granted macOS permissions, quit ZoomCut and open it again.',
@@ -465,6 +481,41 @@ function applyLanguage() {
   for (const [sel, key] of textMap) {
     const el = document.querySelector(sel);
     if (el) el.textContent = tr(key);
+  }
+  const extraTextMap = [
+    ['#annotationToolTip', 'annotationTip'], ['#bgPersistenceNote', 'backgroundImageSessionNote'],
+    ['#frameReset', 'frameReset'], ['#debugToggle', 'debug'],
+    ['#annotationDuplicate', 'annotationDuplicate'], ['#annotationDelete', 'annotationDelete'],
+  ];
+  for (const [sel, key] of extraTextMap) {
+    const element = document.querySelector(sel);
+    if (element) element.textContent = tr(key);
+  }
+  const annotationLabelMap = [
+    ['#annotationType', 'annotationTool'], ['#annotationFontFamily', 'annotationFont'],
+    ['#annotationAlign', 'annotationAlign'], ['#annotationColor', 'annotationColor'],
+    ['#annotationFontSize', 'annotationSize'], ['#annotationOpacity', 'annotationOpacity'],
+    ['#annotationStart', 'annotationStart'], ['#annotationDuration', 'annotationDuration'],
+    ['#annotationLane', 'lane'],
+  ];
+  for (const [inputSelector, key] of annotationLabelMap) {
+    const label = document.querySelector(inputSelector)?.closest('span')?.querySelector('label');
+    if (label) label.textContent = tr(key) + ' ';
+  }
+  const annotationTextWrap = $('annotationTextWrap');
+  const annotationTextNode = [...annotationTextWrap.childNodes].find(node => node.nodeType === Node.TEXT_NODE);
+  if (annotationTextNode) annotationTextNode.nodeValue = tr('annotationText') + ' ';
+  $('annotationText').placeholder = tr('annotationPlaceholder');
+  for (const [value, key] of [['left', 'alignLeft'], ['center', 'alignCenter'], ['right', 'alignRight']]) {
+    const option = document.querySelector(`#annotationAlign option[value="${value}"]`);
+    if (option) option.textContent = tr(key);
+  }
+  const previewLabels = [['previewStepBack', 'previewBack'], ['previewPlay', video.paused ? 'play' : 'pause'], ['previewStepForward', 'previewForward']];
+  for (const [id, key] of previewLabels) {
+    const element = $(id);
+    const label = tr(key).replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    element.title = label;
+    element.setAttribute('aria-label', label);
   }
   updateRecordingReviewLanguage();
   $('pickerChangeSource').textContent = state.lang === 'th' ? 'เปลี่ยนแหล่ง' : 'Change source';

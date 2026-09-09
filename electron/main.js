@@ -180,7 +180,12 @@ async function createWindow() {
     });
     handle('media:register-recording', (base) => {
       const safeBase = path.basename(String(base || '')).replace(/[^a-zA-Z0-9_.-]/g, '');
-      const result = serverInfo.registerMediaPath(path.join(serverInfo.recordingsDir, safeBase + '.mp4'));
+      const mediaPath = path.resolve(path.join(serverInfo.recordingsDir, safeBase + '.mp4'));
+      const result = serverInfo.registerMediaPath(mediaPath);
+      // Recordings are trusted local assets returned by our own capture pipeline.
+      // Authorize the canonical path as soon as it enters the editor so export's
+      // audio-plan guard accepts the same base media the renderer just loaded.
+      authorizedMediaPaths.add(mediaPath);
       const clicksPath = path.join(serverInfo.recordingsDir, safeBase + '.clicks.json');
       if (fs.existsSync(clicksPath)) result.clicksUrl = serverInfo.registerMediaPath(clicksPath).url;
       return result;

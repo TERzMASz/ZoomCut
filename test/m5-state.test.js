@@ -87,3 +87,19 @@ test('forced exit explicitly closes local resources first', () => {
   assert.match(source, /globalShortcut\.unregisterAll\(\)/);
   assert.match(source, /await cleanupBeforeWindowClose\(\)[\s\S]+app\.exit\(0\)/);
 });
+
+test('recordings are authorized for export only after local media registration succeeds', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.js'), 'utf8');
+  const handler = source.match(/handle\('media:register-recording',[\s\S]+?return result;\n\s*}\);/)?.[0] || '';
+  assert.match(handler, /const mediaPath = path\.resolve/);
+  assert.ok(handler.indexOf('serverInfo.registerMediaPath(mediaPath)') < handler.indexOf('authorizedMediaPaths.add(mediaPath)'));
+});
+
+test('English language refresh covers the new annotation and inspector copy', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'shared', 'editor-app.js'), 'utf8');
+  for (const id of ['annotationToolTip', 'bgPersistenceNote', 'frameReset', 'debugToggle', 'annotationDuplicate', 'annotationDelete']) {
+    assert.match(source, new RegExp(`['\"]#${id}['\"]`));
+  }
+  assert.match(source, /annotationTextNode\.nodeValue = tr\('annotationText'\)/);
+  assert.match(source, /previewStepBack[\s\S]+previewStepForward/);
+});
