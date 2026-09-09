@@ -31,6 +31,15 @@ const state = {
   urlText: '',
   statusBar: 'none', // 'none' | 'auto' | 'light' | 'dark'
   showTaps: true,
+  // M1 foundation fields. They are persisted now; rendering and editing land
+  // in later milestones so legacy projects remain behaviorally unchanged.
+  cursorSettings: { enabled: true, style: 'soft', size: 1, smoothing: 0.65, clickEffect: 'ripple', clickBounce: 1, bounceDurationMs: 350, sway: 0 },
+  cursorPoints: [],
+  annotations: [],
+  annotationLaneCount: 1,
+  shortcuts: {},
+  background: { type: 'preset', value: 0, colors: [], blur: 0 },
+  frameStyle: { type: 'none', padding: 0, radius: 3, shadow: 60 },
   debugOverlay: false,
   taps: [],        // {t, x, y} จาก clicks.json — ใช้วาด ripple
   defZoom: 1.2,
@@ -283,7 +292,12 @@ function redoEdit() {
 }
 function applyTheme() {
   document.body.dataset.theme = state.theme;
+  const nextThemeLabel = state.theme === 'dark'
+    ? (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'Switch to light mode')
+    : (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดมืด' : 'Switch to dark mode');
   $('themeBtn').textContent = state.theme === 'dark' ? '☀️' : '🌙';
+  $('themeBtn').title = nextThemeLabel;
+  $('themeBtn').setAttribute('aria-label', nextThemeLabel);
 }
 function updateTimelineScale(anchorFrac = null) {
   const vp = $('timelineViewport');
@@ -413,6 +427,10 @@ function applyLanguage() {
     const el = document.querySelector(sel);
     if (el) el.textContent = tr(key);
   }
+  const fitFrame = document.querySelector('#aspectRow [data-aspect="fit"]');
+  if (fitFrame) fitFrame.title = state.lang === 'th'
+    ? 'พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ'
+    : 'Fit frame — content fills the frame without surrounding background';
   for (const [id, key] of [['addVideoLane', 'addVideoLane'], ['addVoiceLane', 'addVoiceLane'], ['addCameraLane', 'addCameraLane']]) {
     $(id).querySelector('[data-lane-text]').textContent = tr(key);
   }
@@ -424,8 +442,20 @@ function applyLanguage() {
   for (const [inputId, key] of sliderLabels) {
     const label = document.querySelector(`label[for="${inputId}"]`)
       || $(inputId)?.closest('.slider-row, span')?.querySelector('label');
-    if (label) label.textContent = tr(key) + ' ';
+    if (label) {
+      const translated = tr(key);
+      label.textContent = translated + ' ';
+      $(inputId)?.setAttribute('aria-label', translated);
+    }
   }
+  const gradientLabel = state.lang === 'th' ? ['gradient กำหนดเอง สี 1', 'gradient กำหนดเอง สี 2'] : ['Custom gradient color 1', 'Custom gradient color 2'];
+  ['cg1', 'cg2'].forEach((id, index) => {
+    const element = $(id);
+    if (element) {
+      element.title = gradientLabel[index];
+      element.setAttribute('aria-label', gradientLabel[index]);
+    }
+  });
   const cropTip = $('cropTip');
   if (cropTip) cropTip.textContent = tr('cropTip');
   const tips = document.querySelectorAll('.sidebar > .tip');
@@ -434,7 +464,43 @@ function applyLanguage() {
   $('presetSel').querySelector('option[value=""]').textContent = tr('presetPlaceholder');
   $('exportSub').textContent = tr('exportSub');
   $('shortcutBtn').title = tr('shortcuts');
-  $('themeBtn').title = state.theme === 'dark' ? (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'Switch to light mode') : (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดมืด' : 'Switch to dark mode');
+  const controlHelp = state.lang === 'th'
+    ? {
+      newBtn: 'เริ่มงานชิ้นใหม่', projectOpenBtn: 'เปิดโปรเจกต์ ZoomCut', projectSaveBtn: 'บันทึกโปรเจกต์ ZoomCut',
+      diagBtn: 'ตรวจระบบอัดหน้าจอ/ffmpeg/click hook', splitBtn: 'แบ่งท่อนตรงตำแหน่งหัวอ่าน',
+    }
+    : {
+      newBtn: 'Start a new project', projectOpenBtn: 'Open ZoomCut project', projectSaveBtn: 'Save ZoomCut project',
+      diagBtn: 'Check recording, ffmpeg, and click hook', splitBtn: 'Split at playhead',
+    };
+  for (const [id, title] of Object.entries(controlHelp)) {
+    const element = $(id);
+    if (element) {
+      element.title = title;
+      element.setAttribute('aria-label', title);
+    }
+  }
+  const themeLabel = state.theme === 'dark' ? (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดสว่าง' : 'Switch to light mode') : (state.lang === 'th' ? 'เปลี่ยนเป็นโหมดมืด' : 'Switch to dark mode');
+  $('themeBtn').title = themeLabel;
+  $('themeBtn').setAttribute('aria-label', themeLabel);
+  const inspectorTitles = state.lang === 'th'
+    ? {
+      bgImageBtn: 'อัปโหลดรูปพื้นหลัง', bgTransBtn: 'พื้นหลังโปร่งใส (Export PNG)',
+      cropToggle: 'สลับแสดง/ซ่อนขอบที่จะถูกตัด', debugToggle: 'แสดงพิกัด crop/source/camera สำหรับตรวจ zoom',
+      presetSave: 'บันทึกค่าปัจจุบันเป็น preset', presetDel: 'ลบ preset ที่เลือก',
+    }
+    : {
+      bgImageBtn: 'Upload background image', bgTransBtn: 'Transparent background (PNG export)',
+      cropToggle: 'Show or hide the crop guide', debugToggle: 'Show crop/source/camera coordinates for zoom debugging',
+      presetSave: 'Save current settings as a preset', presetDel: 'Delete selected preset',
+    };
+  for (const [id, title] of Object.entries(inspectorTitles)) {
+    const element = $(id);
+    if (element) {
+      element.title = title;
+      element.setAttribute('aria-label', title);
+    }
+  }
   $('snapBtn').title = state.lang === 'th' ? 'บันทึกเฟรมปัจจุบันเป็น PNG' : 'Save current frame as PNG';
   $('voiceBtn').title = state.lang === 'th' ? 'อัดเสียงบรรยายเริ่มที่ playhead' : 'Record voiceover starting at the playhead';
   $('micSel').title = state.lang === 'th' ? 'เลือกไมโครโฟน' : 'Choose microphone';
@@ -907,6 +973,9 @@ function loadImage(file) {
     state.baseMedia = fileSource(file);
     state.events = [];
     state.taps = [];
+    state.cursorPoints = [];
+    state.annotations = [];
+    state.annotationLaneCount = 1;
     state.voiceovers = [];
     state.selectedVoiceId = null;
     state.videoClips = [];
@@ -941,6 +1010,9 @@ function loadVideoSource(url, source, clicksFile, onLoaded) {
     state.baseMedia = { ...(source || {}), url };
     state.events = [];
     state.taps = [];
+    state.cursorPoints = [];
+    state.annotations = [];
+    state.annotationLaneCount = 1;
     state.voiceovers = [];
     state.selectedVoiceId = null;
     state.videoClips = [];
@@ -1082,10 +1154,23 @@ async function restoreProject(document, projectPath, recovered = false) {
   loadVideoSource(base.url, { ...document.baseMedia, url: base.url }, null, async () => {
     try {
       const saved = document.state;
-      Object.assign(state, document.settings || {});
+      const settings = document.settings || {};
+      Object.assign(state, settings);
+      // New v2 aliases are intentionally projected back onto the legacy
+      // renderer fields until the cursor/annotation UI is implemented.
+      if (settings.background && typeof settings.background === 'object') {
+        if (settings.background.type) state.bgType = settings.background.type;
+        if (settings.background.value !== undefined) state.bg = settings.background.value;
+      }
+      if (settings.frameStyle !== undefined) {
+        state.frame = typeof settings.frameStyle === 'string' ? settings.frameStyle : (settings.frameStyle.type || state.frame);
+      }
       state.segments = saved.segments.map(x => ({ ...x }));
       state.events = (saved.events || []).map(x => ({ ...x }));
       state.taps = (saved.taps || []).map(x => ({ ...x }));
+      state.cursorPoints = (saved.cursorPoints || []).map(x => ({ ...x }));
+      state.annotations = (saved.annotations || []).map(x => ({ ...x }));
+      state.annotationLaneCount = saved.annotationLaneCount || 1;
       state.videoClips = await Promise.all((saved.videoClips || []).map(x => hydrateClip({ ...x }, 'video')));
       state.voiceovers = await Promise.all((saved.voiceovers || []).map(x => hydrateClip({ ...x }, 'voice')));
       state.facecams = await Promise.all((saved.facecams || []).map(x => hydrateClip({ ...x }, 'camera')));
@@ -3154,6 +3239,7 @@ $('newBtn').onclick = () => {
     videoClips: [], selectedVideoId: null,
     voiceovers: [], selectedVoiceId: null,
     facecams: [], selectedFaceId: null,
+    cursorPoints: [], annotations: [], annotationLaneCount: 1,
     segments: [], selectedSeg: null,
     videoLaneCount: 1,
     voiceLaneCount: 1,

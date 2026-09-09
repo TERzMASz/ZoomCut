@@ -66,6 +66,7 @@
       recordTitle: 'เริ่มอัดหน้าจอ', recordBody: 'เลือกหน้าต่าง จอ iPhone หรือ Android แล้วเริ่มอัดจากที่เดียว', recordStart: 'เลือกสิ่งที่จะอัด', diagnostics: 'ตรวจความพร้อมระบบ',
       audioTitle: 'เสียงบรรยาย', audioBody: 'เลือกไมโครโฟนก่อนเริ่มพากย์จากตำแหน่ง playhead', cameraTitle: 'กล้องผู้บรรยาย', cameraBody: 'กล้องจะถูกอัดเป็นคลิปแยกและแก้ตำแหน่งภายหลังได้',
       exportTitle: 'ตั้งค่าการส่งออก', exportBody: 'เลือกความละเอียดก่อนเปิดหน้าต่าง Export', settingsTitle: 'แอปและโปรเจกต์', settingsBody: 'ภาษา ธีม คีย์ลัด และเครื่องมือตรวจสอบ',
+      advanced: 'ขั้นสูง', advancedBody: 'การตั้งค่า cursor, shortcut และ annotation พร้อมสำหรับโปรเจกต์รุ่นถัดไป โดยยังไม่เปลี่ยนพฤติกรรมการเรนเดอร์เดิม',
     },
     en: {
       media: 'Project media', record: 'Record', audio: 'Audio', camera: 'Camera', clicks: 'Click & Zoom', style: 'Style', export: 'Export', settings: 'Settings',
@@ -76,6 +77,7 @@
       recordTitle: 'Record your screen', recordBody: 'Choose a window, iPhone, Android device, or display and start from one place.', recordStart: 'Choose recording source', diagnostics: 'Check system readiness',
       audioTitle: 'Voice over', audioBody: 'Choose a microphone before recording from the playhead.', cameraTitle: 'Presenter camera', cameraBody: 'Camera is recorded as a separate clip that can be repositioned later.',
       exportTitle: 'Export settings', exportBody: 'Choose a resolution before opening Export.', settingsTitle: 'App and project', settingsBody: 'Language, theme, shortcuts, and diagnostics.',
+      advanced: 'Advanced', advancedBody: 'Cursor, shortcut, and annotation settings are ready for the next project milestone without changing legacy rendering behavior.',
     },
   };
 
@@ -116,8 +118,69 @@
     updateInspectorState();
   }
 
+  // Enhance the existing controls in place. Never clone controls: editor-app
+  // owns their IDs, listeners, and state, while the shell only adds semantics.
+  function enhanceInspectorPrimitives() {
+    sidebar.querySelectorAll('h3').forEach((heading) => heading.classList.add('inspector-section-header'));
+    sidebar.querySelectorAll('.slider-row').forEach((row) => {
+      const input = row.querySelector('input[type="range"]');
+      const label = row.querySelector('label');
+      const output = row.querySelector('.val');
+      if (!input) return;
+      if (label && !label.htmlFor) label.htmlFor = input.id;
+      input.setAttribute('aria-label', label?.textContent?.trim() || input.id);
+      if (output) {
+        output.setAttribute('role', 'status');
+        output.setAttribute('aria-live', 'polite');
+      }
+    });
+    sidebar.querySelectorAll('.segmented-control').forEach((group) => {
+      group.querySelectorAll('.chip').forEach((chip) => {
+        chip.setAttribute('role', 'radio');
+        const active = chip.classList.contains('active');
+        chip.setAttribute('tabindex', active ? '0' : '-1');
+        chip.setAttribute('aria-checked', active ? 'true' : 'false');
+        chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+    });
+    sidebar.querySelectorAll('.chip').forEach((chip) => {
+      if (!chip.hasAttribute('tabindex')) chip.tabIndex = 0;
+      if (chip.dataset.shellKeyboardReady) return;
+      chip.dataset.shellKeyboardReady = '1';
+      chip.addEventListener('keydown', (event) => {
+        const group = chip.closest('.segmented-control');
+        if (group && ['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+          const options = [...group.querySelectorAll('.chip')];
+          const current = options.indexOf(chip);
+          if (current >= 0) {
+            const direction = (event.key === 'ArrowLeft' || event.key === 'ArrowUp') ? -1 : 1;
+            const next = options[(current + direction + options.length) % options.length];
+            event.preventDefault();
+            next.click();
+            next.focus();
+          }
+          return;
+        }
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        chip.click();
+      });
+    });
+  }
+
+  const primitiveObserver = new MutationObserver(() => {
+    sidebar.querySelectorAll('.segmented-control').forEach((group) => group.querySelectorAll('.chip').forEach((chip) => {
+      const active = chip.classList.contains('active');
+      chip.setAttribute('tabindex', active ? '0' : '-1');
+      chip.setAttribute('aria-checked', active ? 'true' : 'false');
+      chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }));
+  });
+  primitiveObserver.observe(sidebar, { subtree: true, attributes: true, attributeFilter: ['class'] });
+
   function setActivePanel(next, persist = true) {
     if (!labels.th[next]) return;
+    const panelChanged = activePanel !== next;
     activePanel = next;
     sidebar.dataset.activePanel = next;
     for (const element of sidebar.querySelectorAll(':scope > [data-editor-panel]')) {
@@ -125,6 +188,19 @@
     }
     document.getElementById('sidebarShellTitle').textContent = shellText()[next];
     document.querySelectorAll('[data-shell-panel]').forEach(tool => tool.classList.toggle('active', tool.dataset.shellPanel === next));
+    if (panelChanged) {
+      sidebar.scrollTop = 0;
+      // The visible panel changes display state above; reset again after the
+      // browser has recalculated its scroll range so a taller prior panel
+      // cannot leak its offset into the new panel.
+      requestAnimationFrame(() => {
+        if (activePanel !== next) return;
+        sidebar.scrollTop = 0;
+        requestAnimationFrame(() => {
+          if (activePanel === next) sidebar.scrollTop = 0;
+        });
+      });
+    }
     shell.classList.remove('sidebar-collapsed');
     if (persist) localStorage.setItem('zoomcut-shell-panel', next);
   }
@@ -194,6 +270,7 @@
   }));
   setActivePanel(activePanel, false);
   syncShellLanguage();
+  enhanceInspectorPrimitives();
   updateInspectorState();
   decorateTopButtons();
   if (globalThis.lucide) globalThis.lucide.createIcons();

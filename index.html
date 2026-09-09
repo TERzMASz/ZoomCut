@@ -873,62 +873,62 @@
       <div class="shell-section-copy"><strong data-shell-copy="settingsTitle">แอปและโปรเจกต์</strong><span data-shell-copy="settingsBody">ภาษา ธีม คีย์ลัด และเครื่องมือตรวจสอบ</span></div>
       <div class="settings-slot" id="settingsSlot"></div>
     </div>
-    <h3 id="sectionPreset">Preset</h3>
-    <div class="row">
+    <h3 class="inspector-section-header" id="sectionPreset">Preset</h3>
+    <div class="row preset-card-row" data-preset-cards>
       <select id="presetSel" class="mini-select"><option value="">— เลือก preset —</option></select>
       <button class="btn small" id="presetSave" title="บันทึกค่าปัจจุบันเป็น preset">💾</button>
       <button class="btn small danger" id="presetDel" title="ลบ preset ที่เลือก">🗑</button>
     </div>
 
-    <h3 id="sectionAspect">สัดส่วนภาพ</h3>
-    <div class="row" id="aspectRow">
-      <div class="chip" data-aspect="16:9">16:9</div>
-      <div class="chip active" data-aspect="9:16">9:16</div>
-      <div class="chip" data-aspect="4:5">4:5</div>
-      <div class="chip" data-aspect="1:1">1:1</div>
-      <div class="chip" data-aspect="fit" title="พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ">📐 พอดีเฟรม</div>
+    <h3 class="inspector-section-header" id="sectionAspect">สัดส่วนภาพ</h3>
+    <div class="row segmented-control" id="aspectRow" role="radiogroup" aria-label="Aspect ratio">
+      <button type="button" class="chip" data-aspect="16:9">16:9</button>
+      <button type="button" class="chip active" data-aspect="9:16">9:16</button>
+      <button type="button" class="chip" data-aspect="4:5">4:5</button>
+      <button type="button" class="chip" data-aspect="1:1">1:1</button>
+      <button type="button" class="chip" data-aspect="fit" title="พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ">📐 พอดีเฟรม</button>
     </div>
 
-    <h3 id="sectionPosition">ตำแหน่งแนวตั้ง</h3>
-    <div class="row" id="posRow">
-      <div class="chip" data-pos="top">บน</div>
-      <div class="chip active" data-pos="center">กลาง</div>
-      <div class="chip" data-pos="bottom">ล่าง</div>
+    <h3 class="inspector-section-header" id="sectionPosition">ตำแหน่งแนวตั้ง</h3>
+    <div class="row segmented-control" id="posRow" role="radiogroup" aria-label="Vertical position">
+      <button type="button" class="chip" data-pos="top">บน</button>
+      <button type="button" class="chip active" data-pos="center">กลาง</button>
+      <button type="button" class="chip" data-pos="bottom">ล่าง</button>
     </div>
 
-    <h3 id="sectionFrame">กรอบอุปกรณ์</h3>
-    <div class="row" id="frameRow">
-      <div class="chip active" data-frame="none">ไม่มี</div>
-      <div class="chip" data-frame="iphone">📱 iPhone</div>
-      <div class="chip" data-frame="browser">🖥 เบราว์เซอร์</div>
+    <h3 class="inspector-section-header" id="sectionFrame">กรอบอุปกรณ์</h3>
+    <div class="row segmented-control" id="frameRow" role="radiogroup" aria-label="Device frame">
+      <button type="button" class="chip active" data-frame="none">ไม่มี</button>
+      <button type="button" class="chip" data-frame="iphone">📱 iPhone</button>
+      <button type="button" class="chip" data-frame="browser">🖥 เบราว์เซอร์</button>
     </div>
     <div class="row" id="phoneColors" style="margin-top:8px; display:none; gap:8px"></div>
     <input type="text" id="urlText" class="url-input" placeholder="yourwebsite.com" style="display:none">
 
-    <h3 id="sectionStatusBar">Status Bar (iPhone)</h3>
-    <div class="row" id="sbRow">
-      <div class="chip active" data-sb="none">ปิด</div>
-      <div class="chip" data-sb="auto">ออโต้</div>
-      <div class="chip" data-sb="light">สว่าง</div>
-      <div class="chip" data-sb="dark">มืด</div>
+    <h3 class="inspector-section-header" id="sectionStatusBar">Status Bar (iPhone)</h3>
+    <div class="row segmented-control" id="sbRow" role="radiogroup" aria-label="Status bar">
+      <button type="button" class="chip active" data-sb="none">ปิด</button>
+      <button type="button" class="chip" data-sb="auto">ออโต้</button>
+      <button type="button" class="chip" data-sb="light">สว่าง</button>
+      <button type="button" class="chip" data-sb="dark">มืด</button>
     </div>
 
-    <h3 id="sectionTap">เอฟเฟกต์จุดแตะ</h3>
-    <div class="row" id="tapRow">
-      <div class="chip active" data-tap="on">💧 แสดง</div>
-      <div class="chip" data-tap="off">ปิด</div>
+    <h3 class="inspector-section-header" id="sectionTap">เอฟเฟกต์จุดแตะ</h3>
+    <div class="row segmented-control" id="tapRow" role="radiogroup" aria-label="Click effect">
+      <button type="button" class="chip active" data-tap="on">💧 แสดง</button>
+      <button type="button" class="chip" data-tap="off">ปิด</button>
     </div>
 
-    <h3 id="sectionBackground">พื้นหลัง</h3>
+    <h3 class="inspector-section-header" id="sectionBackground">พื้นหลัง</h3>
     <div class="bg-grid" id="bgGrid"></div>
     <div class="row" style="margin-top:8px; align-items:center">
       <input type="color" id="cg1" value="#0ea5e9" title="gradient กำหนดเอง สี 1">
       <input type="color" id="cg2" value="#8b5cf6" title="gradient กำหนดเอง สี 2">
-      <div class="chip" id="bgImageBtn" title="อัปโหลดรูปพื้นหลัง">🖼 รูป</div>
-      <div class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</div>
+      <button type="button" class="chip" id="bgImageBtn" title="อัปโหลดรูปพื้นหลัง">🖼 รูป</button>
+      <button type="button" class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</button>
     </div>
 
-    <h3 id="sectionVideoFrame">เฟรมวิดีโอ</h3>
+    <h3 class="inspector-section-header" id="sectionVideoFrame">เฟรมวิดีโอ</h3>
     <div class="slider-row">
       <label>ขอบรอบ</label>
       <input type="range" id="padding" min="0" max="20" value="0">
@@ -945,7 +945,7 @@
       <span class="val" id="shadowVal">60</span>
     </div>
 
-    <h3 id="sectionCrop">ตัดขอบ (Crop)</h3>
+    <h3 class="inspector-section-header" id="sectionCrop">ตัดขอบ (Crop)</h3>
     <div class="tip" id="cropTip" style="margin-top:0">ตัดขอบหน้าต่าง iPhone Mirroring ออก เพื่อไม่ให้เห็นขอบตอนซูม</div>
     <div class="slider-row">
       <label>บน</label>
@@ -968,18 +968,18 @@
       <span class="val" id="cropRVal">0%</span>
     </div>
     <div class="row">
-      <div class="chip" id="cropReset">↺ ล้าง crop</div>
-      <div class="chip" id="cropToggle" title="สลับแสดง/ซ่อนขอบที่จะถูกตัด">👁 ดูขอบ</div>
-      <div class="chip" id="debugToggle" title="แสดงพิกัด crop/source/camera สำหรับตรวจ zoom">🧭 Debug</div>
+      <button type="button" class="chip inspector-reset" id="cropReset">↺ ล้าง crop</button>
+      <button type="button" class="chip" id="cropToggle" title="สลับแสดง/ซ่อนขอบที่จะถูกตัด">👁 ดูขอบ</button>
+      <button type="button" class="chip" id="debugToggle" title="แสดงพิกัด crop/source/camera สำหรับตรวจ zoom">🧭 Debug</button>
     </div>
 
-    <h3 id="sectionZoomDefaults">ค่าเริ่มต้นการซูม</h3>
-    <div class="row" id="zoomStyleRow">
-      <div class="chip active" data-zoom-style="subtle">Subtle</div>
-      <div class="chip" data-zoom-style="focus">Focus</div>
-      <div class="chip" data-zoom-style="fast">Fast</div>
-      <div class="chip" data-zoom-style="cinematic">Cinematic</div>
-      <div class="chip" data-zoom-style="taponly">Tap only</div>
+    <h3 class="inspector-section-header" id="sectionZoomDefaults">ค่าเริ่มต้นการซูม</h3>
+    <div class="row segmented-control" id="zoomStyleRow" role="radiogroup" aria-label="Zoom style">
+      <button type="button" class="chip active" data-zoom-style="subtle">Subtle</button>
+      <button type="button" class="chip" data-zoom-style="focus">Focus</button>
+      <button type="button" class="chip" data-zoom-style="fast">Fast</button>
+      <button type="button" class="chip" data-zoom-style="cinematic">Cinematic</button>
+      <button type="button" class="chip" data-zoom-style="taponly">Tap only</button>
     </div>
     <div class="slider-row">
       <label>ระดับซูม</label>
@@ -993,17 +993,21 @@
     </div>
 
     <div id="imgExportSec" style="display:none">
-      <h3 id="sectionImageExport">ความละเอียด Export (PNG)</h3>
-      <div class="row" id="scaleRow">
-        <div class="chip" data-scale="1">1x</div>
-        <div class="chip active" data-scale="2">2x</div>
-        <div class="chip" data-scale="3">3x</div>
+      <h3 class="inspector-section-header" id="sectionImageExport">ความละเอียด Export (PNG)</h3>
+      <div class="row segmented-control" id="scaleRow" role="radiogroup" aria-label="Export scale">
+        <button type="button" class="chip" data-scale="1">1x</button>
+        <button type="button" class="chip active" data-scale="2">2x</button>
+        <button type="button" class="chip" data-scale="3">3x</button>
       </div>
     </div>
     <div class="tip">
       💡 <b>วิธีใช้:</b> เล่นวิดีโอถึงจังหวะที่กดปุ่มในแอป แล้ว<b>คลิกบนวิดีโอ</b>ตรงจุดนั้น — โปรแกรมจะซูมเข้า-ออกให้อัตโนมัติแบบนุ่มๆ<br><br>
       ลาก marker บน timeline เพื่อย้ายเวลา, คลิก marker เพื่อแก้ระดับซูม/ลบ
     </div>
+    <details class="inspector-advanced" id="advancedInspector">
+      <summary><span data-shell-copy="advanced">ขั้นสูง</span><span class="advanced-meta">schema v2</span></summary>
+      <p data-shell-copy="advancedBody">การตั้งค่า cursor, shortcut และ annotation พร้อมสำหรับโปรเจกต์รุ่นถัดไป โดยยังไม่เปลี่ยนพฤติกรรมการเรนเดอร์เดิม</p>
+    </details>
   </div>
 
   <div class="splitter-vertical" id="sidebarSplitter" title="Drag to resize sidebar"></div>

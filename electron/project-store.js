@@ -5,7 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const editorCore = require('../shared/editor-core');
 
-const PROJECT_VERSION = 1;
+const PROJECT_VERSION = editorCore.PROJECT_VERSION;
 const PROJECT_EXT = '.zoomcut';
 const MAX_PROJECT_BYTES = 32 * 1024 * 1024;
 const MAX_ASSET_CHUNK_BYTES = 32 * 1024 * 1024;

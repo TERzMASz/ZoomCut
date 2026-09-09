@@ -51,3 +51,14 @@ test('literal shell element references resolve to existing DOM ids', () => {
   const missing = [...new Set(references.filter((id) => !htmlIds.has(id)))];
   assert.deepEqual(missing, []);
 });
+
+test('inspector foundation exposes reusable, keyboard-friendly primitives', () => {
+  assert.match(html, /class="[^"]*inspector-section-header[^"]*"/);
+  assert.match(html, /class="[^"]*segmented-control[^"]*"[^>]*role="radiogroup"/);
+  assert.match(html, /class="[^"]*slider-row[^"]*"/);
+  assert.match(html, /id="advancedInspector"/);
+  assert.match(html, /<details[^>]*class="[^"]*inspector-advanced/);
+  assert.match(html, /id="cropReset"[^>]*type="button"|type="button"[^>]*id="cropReset"/);
+  assert.match(shell, /setAttribute\('aria-label'/);
+  assert.match(shell, /shellKeyboardReady/);
+});
