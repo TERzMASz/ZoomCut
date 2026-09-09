@@ -177,7 +177,7 @@ async function recoverInterruptedRecordings(recordingsDir, remux = remuxInterrup
       if (!fs.existsSync(output)) await remux(input, output);
       if (!fs.existsSync(output) || !fs.statSync(output).size) continue;
       const clicksPath = base + '.clicks.json';
-      if (!fs.existsSync(clicksPath)) fs.writeFileSync(clicksPath, JSON.stringify({ version: 1, recovered: true, clicks: [] }, null, 2));
+      if (!fs.existsSync(clicksPath)) fs.writeFileSync(clicksPath, JSON.stringify(recordingMetadata({ recovered: true }), null, 2));
       fs.unlinkSync(input);
       recovered.push(path.basename(base));
       dbg(`record/recovered base=${path.basename(base)}`);
@@ -298,6 +298,64 @@ async function diagnostics() {
 // ---------- optional global input hook (จับคลิกทั้งจอ) ----------
 // Native hook อยู่ใน worker แยก เพื่อไม่ให้ Electron main/API ค้างตามหาก hook มีปัญหา
 const INPUT_HOOK_WORKER = path.join(__dirname, 'input-hook-worker.js');
+const MAX_CURSOR_POINTS = 50_000;
+const CURSOR_COALESCE_DISTANCE = 0.0005;
+const CURSOR_COALESCE_WINDOW_MS = 80;
+
+function normalizePointerPoint(x, y, bounds) {
+  if (!bounds || !Number.isFinite(Number(bounds.w)) || !Number.isFinite(Number(bounds.h)) || bounds.w <= 0 || bounds.h <= 0) return null;
+  const nx = (Number(x) - Number(bounds.x || 0)) / Number(bounds.w);
+  const ny = (Number(y) - Number(bounds.y || 0)) / Number(bounds.h);
+  if (!Number.isFinite(nx) || !Number.isFinite(ny) || nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
+  return { x: +nx.toFixed(5), y: +ny.toFixed(5) };
+}
+
+function downsampleCursor(points, cap = MAX_CURSOR_POINTS) {
+  if (!Array.isArray(points) || points.length <= cap) return points || [];
+  if (cap <= 1) return points.length ? [points[0]] : [];
+  const result = [];
+  const step = (points.length - 1) / (cap - 1);
+  for (let i = 0; i < cap; i++) result.push(points[Math.round(i * step)]);
+  return result;
+}
+
+function appendCursorPoint(points, point, cap = MAX_CURSOR_POINTS) {
+  if (!Array.isArray(points) || !point || !Number.isFinite(point.t) || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return points || [];
+  const last = points[points.length - 1];
+  if (last && point.t - last.t <= CURSOR_COALESCE_WINDOW_MS / 1000
+    && Math.hypot(point.x - last.x, point.y - last.y) <= CURSOR_COALESCE_DISTANCE) {
+    last.t = point.t;
+    return points;
+  }
+  // Compact in batches instead of downsampling the full 50k array on every
+  // subsequent 30Hz event. This keeps long recordings bounded with amortized
+  // O(1) appends while retaining samples across the full elapsed timeline.
+  if (points.length >= cap) {
+    const sampled = downsampleCursor(points, Math.max(1, Math.floor(cap / 2)));
+    points.splice(0, points.length, ...sampled);
+  }
+  points.push(point);
+  return points;
+}
+
+function recordingMetadata({ clicks = [], cursor = [], version = 2, recovered = false, source } = {}) {
+  const data = { version, clicks: Array.isArray(clicks) ? clicks : [], cursor: Array.isArray(cursor) ? cursor : [] };
+  if (recovered) data.recovered = true;
+  if (source) data.source = source;
+  return data;
+}
+
+function normalizeRecordingMetadata(value) {
+  const source = value && typeof value === 'object' ? value : {};
+  return recordingMetadata({
+    version: 2,
+    clicks: Array.isArray(source.clicks) ? source.clicks : [],
+    cursor: source.version >= 2 && Array.isArray(source.cursor) ? source.cursor : [],
+    recovered: source.recovered === true,
+    source: source.source,
+  });
+}
+
 function inputHookAvailable() {
   try { require.resolve('uiohook-napi'); return true; } catch { return false; }
 }
@@ -305,23 +363,24 @@ function inputHookAvailable() {
 // ---------- recording state ----------
 const rec = {
   active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-  proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null, boundsTimer: null,
+  proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], cursor: [], bounds: null, boundsTimer: null,
   boundsRefreshRunning: false,
   androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
-  finished: false, error: null, hookRunning: false, hookActivity: false, capStderr: '', ffmpegError: '',
+  finished: false, duration: 0, error: null, lifecycle: 'idle', hookRunning: false, hookActivity: false, capStderr: '', ffmpegError: '',
 };
 
 function resetRec() {
   Object.assign(rec, { active: false, processing: false, mode: null, wid: null, ownerPid: null, base: null, startedAt: null,
-    proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], bounds: null,
+    proc: null, touchProc: null, mirrorProc: null, hookProc: null, remotePath: null, androidSerial: null, clicks: [], cursor: [], bounds: null,
     boundsRefreshRunning: false,
     androidTimer: null, androidOrientation: 0, androidConnected: true, trackingError: null,
-    finished: false, error: null, hookRunning: false, hookActivity: false, capStderr: '', ffmpegError: '' });
+    finished: false, duration: 0, error: null, lifecycle: 'idle', hookRunning: false, hookActivity: false, capStderr: '', ffmpegError: '' });
 }
 
 async function startRecording(recordingsDir, opts) {
-  if (rec.active) throw new Error('กำลังอัดอยู่แล้ว');
+  if (rec.active || rec.processing) throw new Error('กำลังอัดหรือประมวลผลไฟล์อยู่');
   resetRec();
+  rec.lifecycle = 'starting';
   dbg(`record/start opts=${JSON.stringify(opts || {})}`);
   fs.mkdirSync(recordingsDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
@@ -400,6 +459,7 @@ async function startRecording(recordingsDir, opts) {
     if (rec.startedAt === null && Date.now() - launchedAt >= 800) {
       clearInterval(confirm);
       rec.startedAt = Date.now();
+      rec.lifecycle = 'recording';
       startInputHook();
     }
   }, 150);
@@ -432,6 +492,7 @@ async function startAndroidRecording(base, serial) {
   rec.androidOrientation = await androidOrientation(serial);
   const outMp4 = base + '.mp4';
   rec.mode = 'android';
+  rec.lifecycle = 'recording';
   rec.base = base;
   rec.androidSerial = serial;
   rec.remotePath = null;
@@ -533,11 +594,12 @@ function startInputHook() {
       if (/has not received input/.test(rec.trackingError || '')) rec.trackingError = null;
       return;
     }
-    if (message?.type === 'mousedown' && rec.active && rec.startedAt !== null && rec.bounds) {
-      const b = rec.bounds;
-      const x = message.x, y = message.y;
-      if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
-        rec.clicks.push({ wall: message.wall || Date.now(), x: (x - b.x) / b.w, y: (y - b.y) / b.h });
+    if ((message?.type === 'mousedown' || message?.type === 'mousemove') && rec.active && rec.startedAt !== null && rec.bounds) {
+      const normalized = normalizePointerPoint(message.x, message.y, rec.bounds);
+      if (normalized) {
+        const wall = Number(message.wall) || Date.now();
+        if (message.type === 'mousedown') rec.clicks.push({ wall, ...normalized });
+        else appendCursorPoint(rec.cursor, { t: wall / 1000, ...normalized });
       }
       return;
     }
@@ -590,6 +652,7 @@ async function stopRecording() {
   }
   dbg(`record/stop requested mode=${rec.mode || 'mac'} elapsedMs=${rec.startedAt ? Date.now() - rec.startedAt : 0}`);
   rec.active = false;
+  rec.lifecycle = 'processing';
   rec.processing = true; // หยุดอัดแล้ว แต่ยังแปลงไฟล์อยู่ (frontend รอต่อ ไม่หยุด poll)
   clearInterval(rec.boundsTimer);
   stopInputHook();
@@ -636,17 +699,24 @@ async function stopRecording() {
   // sync เวลาคลิกให้ตรงเฟรมจริง: เฟรม 0 = stopWall - duration
   const dur = await ffprobeDuration(outMp4);
   let clicks = [];
+  let cursor = [];
   if (dur) {
     const frame0 = stopWall - dur * 1000;
     for (const c of rec.clicks) {
       const t = (c.wall - frame0) / 1000;
       if (t >= -0.25 && t <= dur + 0.25) clicks.push({ t: Math.max(0, +t.toFixed(3)), x: +c.x.toFixed(4), y: +c.y.toFixed(4) });
     }
+    cursor = downsampleCursor(rec.cursor.map(point => ({ t: +((point.t * 1000 - frame0) / 1000).toFixed(3), x: +point.x.toFixed(4), y: +point.y.toFixed(4) }))
+      .filter(point => point.t >= -0.25 && point.t <= dur + 0.25)
+      .map(point => ({ ...point, t: Math.max(0, point.t) })));
   }
-  fs.writeFileSync(base + '.clicks.json', JSON.stringify({ version: 1, clicks }, null, 2));
+  fs.writeFileSync(base + '.clicks.json', JSON.stringify(recordingMetadata({ clicks, cursor }), null, 2));
   rec.finished = true;
   rec.processing = false;
+  rec.lifecycle = 'review-ready';
+  rec.duration = dur || 0;
   rec.clicks = clicks;
+  rec.cursor = cursor;
   dbg(`record/stop finalized mode=mac duration=${dur || 0} clicks=${clicks.length}`);
 }
 
@@ -687,10 +757,13 @@ async function finalizeAndroidRecording(stopWall) {
       if (t >= -0.25 && t <= dur + 0.25) clicks.push({ t: Math.max(0, +t.toFixed(3)), x: +c.x.toFixed(4), y: +c.y.toFixed(4) });
     }
   }
-  fs.writeFileSync(base + '.clicks.json', JSON.stringify({ version: 1, source: 'android-adb-getevent', clicks }, null, 2));
+  fs.writeFileSync(base + '.clicks.json', JSON.stringify(recordingMetadata({ version: 2, source: 'android-adb-getevent', clicks, cursor: [] }), null, 2));
   rec.finished = true;
   rec.processing = false;
+  rec.lifecycle = 'review-ready';
+  rec.duration = dur || 0;
   rec.clicks = clicks;
+  rec.cursor = [];
 }
 
 function recordState() {
@@ -700,8 +773,11 @@ function recordState() {
     base: rec.base ? path.basename(rec.base) : null,
     started: rec.startedAt ? rec.startedAt / 1000 : null,
     clicks: rec.clicks.length,
+    cursor: rec.cursor.length,
+    duration: rec.duration || 0,
     finished: rec.finished,
     error: rec.error,
+    lifecycle: rec.error ? 'error' : rec.lifecycle,
     hasClickTracking: inputHookAvailable(),
     hookRunning: rec.hookRunning,
     hookReceivingEvents: rec.hookActivity,
@@ -967,7 +1043,10 @@ function startServer({ webRoot, recordingsDir, exportRecoveryDir, port = 0 } = {
   });
 }
 
-module.exports = { startServer, listRecordableWindows, startRecording, stopRecording, recordState, buildScreencaptureArgs, recoverInterruptedRecordings };
+module.exports = {
+  startServer, listRecordableWindows, startRecording, stopRecording, recordState, buildScreencaptureArgs,
+  recoverInterruptedRecordings, normalizePointerPoint, downsampleCursor, appendCursorPoint, recordingMetadata, normalizeRecordingMetadata,
+};
 
 // รันเดี่ยวเพื่อทดสอบ: node electron/server.js
 if (require.main === module) {

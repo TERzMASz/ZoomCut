@@ -427,6 +427,10 @@ function applyLanguage() {
     const el = document.querySelector(sel);
     if (el) el.textContent = tr(key);
   }
+  updateRecordingReviewLanguage();
+  $('pickerChangeSource').textContent = state.lang === 'th' ? 'เปลี่ยนแหล่ง' : 'Change source';
+  $('pickerRecord').textContent = state.lang === 'th' ? '🔴 เริ่มอัด' : '🔴 Record';
+  $('recordCountdown').previousElementSibling.textContent = state.lang === 'th' ? 'เริ่มอัดใน' : 'Start in';
   const fitFrame = document.querySelector('#aspectRow [data-aspect="fit"]');
   if (fitFrame) fitFrame.title = state.lang === 'th'
     ? 'พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ'
@@ -914,6 +918,11 @@ async function importClicks(file) {
   let data;
   try { data = JSON.parse(await file.text()); } catch { alert(state.lang === 'th' ? 'อ่านไฟล์ clicks.json ไม่ได้' : 'Cannot read clicks.json'); return; }
   const clicks = data.clicks || [];
+  // v2 recordings carry a normalized pointer stream; v1 imports remain valid
+  // and intentionally recover with an empty cursor timeline.
+  state.cursorPoints = (data.version >= 2 && Array.isArray(data.cursor) ? data.cursor : [])
+    .filter(point => Number.isFinite(Number(point.t)) && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y)))
+    .map(point => ({ t: Math.max(0, Number(point.t)), x: clamp(Number(point.x), 0, 1), y: clamp(Number(point.y), 0, 1), kind: 'move' }));
   state.taps = clicks.map(c => ({ t: c.t, x: c.x, y: c.y })); // ทุกคลิกกลายเป็น ripple
   state.events = [];
   for (const c of clicks) {
@@ -3600,7 +3609,49 @@ $('exportBtn').onclick = async () => {
 
 // ---------- อัดหน้าจอ iPhone จากปุ่มในแอป (ผ่าน serve.py) ----------
 const recBtn = $('recBtn');
-let recState = { recording: false, poller: null, polling: false };
+let recState = { recording: false, poller: null, polling: false, lifecycle: 'idle', pending: null, target: null, countdownSec: 3 };
+
+function setRecordingLifecycle(lifecycle) {
+  recState.lifecycle = lifecycle;
+  const hud = $('recordingHud');
+  if (hud) hud.dataset.lifecycle = lifecycle;
+}
+
+function formatRecordingDuration(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function recordingReviewUrl(base) {
+  const token = API_TOKEN ? `?token=${encodeURIComponent(API_TOKEN)}` : '';
+  return `/recordings/${encodeURIComponent(String(base || ''))}.mp4${token}`;
+}
+
+function hideRecordingReview() {
+  $('recordingReview').hidden = true;
+  $('recordingReviewVideo').pause();
+  $('recordingReviewVideo').removeAttribute('src');
+  recState.pending = null;
+}
+
+function showRecordingReview(data) {
+  recState.pending = { base: data.base, duration: data.duration || 0, clicks: data.clicks || 0, target: recState.target };
+  const review = $('recordingReview');
+  const videoPreview = $('recordingReviewVideo');
+  videoPreview.src = recordingReviewUrl(data.base);
+  $('recordingReviewTitle').value = state.lang === 'th' ? 'วิดีโออัดหน้าจอ' : 'Screen recording';
+  $('recordingReviewMeta').textContent = `${formatRecordingDuration(data.duration)} • ${data.clicks || 0} ${state.lang === 'th' ? 'คลิก' : 'clicks'}`;
+  review.hidden = false;
+}
+
+function updateRecordingReviewLanguage() {
+  const th = state.lang === 'th';
+  $('recordingReview').querySelector('.recording-review-kicker').textContent = th ? 'พร้อมตรวจ' : 'Review ready';
+  $('recordingReviewPlay').textContent = th ? '▶️ เล่น' : '▶️ Play';
+  $('recordingReviewRerecord').textContent = th ? '↺ อัดใหม่' : '↺ Re-record';
+  $('recordingReviewDiscard').textContent = th ? 'นำออกจากรายการ' : 'Discard from list';
+  $('recordingReviewOpen').textContent = th ? 'เปิดใน editor' : 'Open in editor';
+}
 
 function setRecordingHud(mode, { elapsed = 0, clicks = 0, warning = '' } = {}) {
   const hud = $('recordingHud');
@@ -3636,7 +3687,7 @@ function setRecordingHud(mode, { elapsed = 0, clicks = 0, warning = '' } = {}) {
   if (shellRecordLabel) shellRecordLabel.textContent = mode === 'running' ? (th ? 'หยุดอัด' : 'Stop recording') : status;
 }
 $('recordingStopBtn').onclick = () => {
-  if (recState.recording) recBtn.click();
+  if (recState.recording) { setRecordingLifecycle('stopping'); recBtn.click(); }
 };
 
 $('themeBtn').onclick = () => {
@@ -3788,6 +3839,7 @@ $('diagOverlay').addEventListener('click', e => { if (e.target === $('diagOverla
 
 recBtn.onclick = async () => {
   if (recState.recording) {
+    setRecordingLifecycle('stopping');
     recBtn.textContent = tr('recStopping');
     $('quickRecord').classList.add('recording');
     setRecordingHud('stopping', {
@@ -3856,6 +3908,9 @@ const APP_ICONS = {
 function appIcon(app) { return APP_ICONS[app.toLowerCase()] || '🪟'; }
 
 async function openSourcePicker() {
+  // Keep the modal stack unambiguous when starting another take from the
+  // editor while a completed recording is still awaiting review.
+  hideRecordingReview();
   const list = $('pickerList');
   list.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px">${state.lang === 'th' ? 'กำลังโหลดรายชื่อหน้าต่าง...' : 'Loading windows...'}</div>`;
   $('pickerOverlay').classList.add('visible');
@@ -3867,6 +3922,9 @@ async function openSourcePicker() {
     data = {};
   }
   list.innerHTML = '';
+  recState.lifecycle = 'preflight';
+  recState.target = null;
+  $('pickerSelection').classList.remove('visible');
 
   const addItem = (icon, name, detail, target) => {
     const el = document.createElement('button');
@@ -3874,7 +3932,7 @@ async function openSourcePicker() {
     el.innerHTML = `<span class="icon">${icon}</span><span class="info">
       <div class="name">${String(name).replace(/</g, '&lt;')}</div>
       <div class="detail">${String(detail).replace(/</g, '&lt;')}</div></span>`;
-    el.onclick = () => startRecording(target);
+    el.onclick = () => selectRecordingTarget({ icon, name, detail, target });
     list.appendChild(el);
   };
 
@@ -3898,12 +3956,59 @@ async function openSourcePicker() {
     }
   }
 }
-$('pickerCancel').onclick = () => $('pickerOverlay').classList.remove('visible');
+
+function selectRecordingTarget({ icon, name, detail, target }) {
+  recState.target = target;
+  recState.lifecycle = 'source-selected';
+  $('pickerTargetIcon').textContent = icon;
+  $('pickerTargetName').textContent = name;
+  $('pickerTargetDetail').textContent = detail;
+  $('pickerSelection').classList.add('visible');
+  $('pickerRecord').focus();
+}
+$('pickerCancel').onclick = () => { $('pickerOverlay').classList.remove('visible'); setRecordingLifecycle('idle'); };
+$('pickerChangeSource').onclick = () => { recState.target = null; recState.lifecycle = 'preflight'; $('pickerSelection').classList.remove('visible'); };
+$('pickerRecord').onclick = () => {
+  if (!recState.target) return;
+  recState.countdownSec = Number($('recordCountdown').value) || 0;
+  startRecording(recState.target);
+};
 $('pickerOverlay').addEventListener('click', e => {
-  if (e.target === $('pickerOverlay')) $('pickerOverlay').classList.remove('visible');
+  if (e.target === $('pickerOverlay')) {
+    $('pickerOverlay').classList.remove('visible');
+    recState.target = null;
+    setRecordingLifecycle('idle');
+  }
 });
 
+$('recordingReviewPlay').onclick = () => {
+  const preview = $('recordingReviewVideo');
+  if (preview.paused) preview.play().catch(() => {});
+  else preview.pause();
+};
+$('recordingReviewDiscard').onclick = () => {
+  // Detach from the UI only. The finished media remains on disk for recovery.
+  hideRecordingReview();
+  setRecordingLifecycle('idle');
+};
+$('recordingReviewRerecord').onclick = () => {
+  const target = recState.pending?.target || recState.target;
+  hideRecordingReview();
+  if (target) startRecording(target);
+  else openSourcePicker();
+};
+$('recordingReviewOpen').onclick = () => {
+  const pending = recState.pending;
+  if (!pending?.base) return;
+  const base = pending.base;
+  hideRecordingReview();
+  setRecordingLifecycle('idle');
+  loadFromServer(base);
+};
+
 function recordingCountdown(seconds = 3) {
+  if (!seconds) return Promise.resolve(true);
+  setRecordingLifecycle('countdown');
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(5,7,12,.62);display:grid;place-items:center;z-index:300';
@@ -3921,6 +4026,7 @@ function recordingCountdown(seconds = 3) {
 }
 
 async function recordingPreflight(target) {
+  setRecordingLifecycle('preflight');
   if (!desktop || target.androidSerial) return true;
   const permissions = await desktop.system.permissions().catch(() => null);
   if (permissions && ['denied', 'restricted'].includes(permissions.screen)) {
@@ -3933,9 +4039,17 @@ async function recordingPreflight(target) {
 
 async function startRecording(target) {
   $('pickerOverlay').classList.remove('visible');
-  if (!await recordingPreflight(target)) return;
-  if (!await recordingCountdown(3)) return;
+  recState.target = target;
+  if (!await recordingPreflight(target)) {
+    setRecordingLifecycle('idle');
+    return;
+  }
+  if (!await recordingCountdown(recState.countdownSec ?? 3)) {
+    setRecordingLifecycle('idle');
+    return;
+  }
   recState.recording = true;
+  setRecordingLifecycle('starting');
   recBtn.classList.add('recording');
   recBtn.textContent = tr('recStarting');
   $('quickRecord').classList.add('recording');
@@ -3956,6 +4070,7 @@ async function startRecording(target) {
     clearInterval(recState.poller);
     recState.poller = null;
     recState.recording = false;
+    setRecordingLifecycle('error');
     recBtn.classList.remove('recording');
     $('quickRecord').classList.remove('recording');
     recBtn.textContent = tr('record');
@@ -3981,6 +4096,7 @@ async function pollRecStateOnce() {
   catch { return; }
   if (!ok) return;
   if (data.running) {
+    setRecordingLifecycle('recording');
     const secs = Math.max(0, Math.floor(Date.now() / 1000 - data.started));
     const mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
     recBtn.textContent = `${state.lang === 'th' ? '⏹ หยุดอัด' : '⏹ Stop'} ${mm}:${ss} • 👆${data.clicks}`;
@@ -3993,6 +4109,7 @@ async function pollRecStateOnce() {
   // ยังไม่ถึงสถานะจบ (finished/error) → ต้องรอต่อ ห้ามหยุด poll
   // (บั๊กเดิม: running เป็น false ก่อน finished เป็น true → หยุด poll ก่อนวิดีโอพร้อม → วิดีโอไม่กลับเข้า editor)
   if (!data.finished && !data.error) {
+    setRecordingLifecycle(data.processing ? 'processing' : 'starting');
     recBtn.classList.remove('recording');
     recBtn.textContent = data.processing ? tr('recProcessing') : tr('recStarting');
     setRecordingHud(data.processing ? 'processing' : 'starting', {
@@ -4010,10 +4127,14 @@ async function pollRecStateOnce() {
   setRecordingHud(null);
   if (desktop) desktop.system.recordingIndicator(false).catch(() => {});
   if (data.error) {
+    setRecordingLifecycle('error');
     showActionableError((state.lang === 'th' ? 'อัดไม่สำเร็จ:\n' : 'Recording failed:\n') + data.error);
     return;
   }
-  if (data.finished && data.base) loadFromServer(data.base);
+  if (data.finished && data.base) {
+    setRecordingLifecycle('review-ready');
+    showRecordingReview(data);
+  }
 }
 
 async function loadFromServer(base) {

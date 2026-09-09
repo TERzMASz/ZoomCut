@@ -752,6 +752,38 @@
   .picker-item .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .picker-item .detail { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .picker-cancel { margin-top: 12px; align-self: flex-end; }
+  .picker-selection {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel2));
+  }
+  .picker-selection.visible { display: grid; gap: 10px; }
+  .picker-target { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .picker-target-icon { font-size: 22px; }
+  .picker-target-copy { min-width: 0; }
+  .picker-target-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-target-detail { color: var(--muted); font-size: 11px; }
+  .picker-controls { display: flex; align-items: center; gap: 8px; }
+  .picker-controls label { color: var(--muted); font-size: 11px; }
+  .picker-controls select { min-width: 94px; }
+  .picker-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .recording-review {
+    position: fixed; top: 118px; left: 50%; transform: translateX(-50%); width: min(480px, calc(100vw - 28px));
+    display: grid; grid-template-columns: 116px 1fr; gap: 14px; padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border)); border-radius: 14px;
+    background: color-mix(in srgb, var(--panel) 96%, #000); box-shadow: 0 18px 50px rgba(0,0,0,.38); z-index: 255;
+  }
+  .recording-review[hidden] { display: none; }
+  .recording-review video { width: 116px; height: 76px; object-fit: cover; border-radius: 9px; background: #090b10; }
+  .recording-review-copy { min-width: 0; display: grid; gap: 4px; align-content: center; }
+  .recording-review-kicker { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .recording-review-name { width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 2px 0; background: transparent; color: var(--text); font-size: 13px; font-weight: 700; outline: none; }
+  .recording-review-meta { color: var(--muted); font-size: 11px; }
+  .recording-review-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+  @media (max-width: 560px) { .picker-box { width: calc(100vw - 24px); padding: 14px; } .recording-review { grid-template-columns: 88px 1fr; } .recording-review video { width: 88px; height: 64px; } }
   input[type=file] { display: none; }
   input[type=color] {
     width: 34px; height: 30px;
@@ -1153,8 +1185,19 @@
     <h2>เลือกสิ่งที่จะอัด</h2>
     <div class="sub">เหมือนแชร์จอใน meeting — เลือกหน้าต่างที่ต้องการ แล้วทุกคลิกจะกลายเป็นจุดซูมอัตโนมัติ</div>
     <div class="picker-list" id="pickerList"></div>
+    <div class="picker-selection" id="pickerSelection" aria-live="polite">
+      <div class="picker-target"><span class="picker-target-icon" id="pickerTargetIcon">🖥</span><div class="picker-target-copy"><div class="picker-target-name" id="pickerTargetName"></div><div class="picker-target-detail" id="pickerTargetDetail"></div></div></div>
+      <div class="picker-controls"><label for="recordCountdown">เริ่มอัดใน</label><select class="mini-select" id="recordCountdown" aria-label="Countdown"><option value="0">ทันที</option><option value="3" selected>3 วินาที</option><option value="5">5 วินาที</option></select></div>
+      <div class="picker-actions"><button class="btn small" id="pickerChangeSource" type="button">เปลี่ยนแหล่ง</button><button class="btn small primary" id="pickerRecord" type="button">🔴 เริ่มอัด</button></div>
+    </div>
     <button class="btn small picker-cancel" id="pickerCancel">ยกเลิก</button>
   </div>
+</div>
+
+<div class="recording-review" id="recordingReview" hidden role="dialog" aria-labelledby="recordingReviewTitle">
+  <video id="recordingReviewVideo" muted playsinline preload="metadata"></video>
+  <div class="recording-review-copy"><span class="recording-review-kicker">Review ready</span><input class="recording-review-name" id="recordingReviewTitle" value="Screen recording" aria-label="Recording name"><span class="recording-review-meta" id="recordingReviewMeta"></span></div>
+  <div class="recording-review-actions"><button class="btn small" id="recordingReviewPlay" type="button">▶️ เล่น</button><button class="btn small" id="recordingReviewRerecord" type="button">↺ อัดใหม่</button><button class="btn small danger" id="recordingReviewDiscard" type="button">ลบออกจากรายการ</button><button class="btn small primary" id="recordingReviewOpen" type="button">เปิดใน editor</button></div>
 </div>
 
 <div id="diagOverlay">
