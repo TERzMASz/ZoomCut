@@ -2,6 +2,7 @@
 // เปิด HTTP server ในตัว (server.js) แล้วโหลด index.html ผ่าน localhost
 // ทำให้ renderer (ตัวแก้ไข) ใช้โค้ดเดิมได้ทั้งดุ้น ไม่ต้องแก้
 const { app, BrowserWindow, shell, systemPreferences, dialog, ipcMain, session, Tray, Menu, nativeImage, globalShortcut } = require('electron');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { startServer, stopRecording, recordState } = require('./server');
@@ -14,6 +15,8 @@ let ipcReady = false;
 let recordingTray = null;
 let recordingTrayTimer = null;
 let nativeStopPromise = null;
+let closeRequestId = null;
+let closeInFlight = false;
 const RECORDING_SHORTCUT = process.platform === 'darwin' ? 'Control+Command+S' : 'Control+Shift+S';
 const authorizedMediaPaths = new Set();
 const MEDIA_EXTENSIONS = new Set(['.mp4', '.mov', '.webm', '.m4a', '.mp3', '.wav', '.ogg']);
@@ -83,6 +86,25 @@ function showRecordingIndicator(active) {
   recordingTrayTimer = setInterval(refresh, 1000);
 }
 
+async function cleanupBeforeWindowClose() {
+  // Keep close deterministic: a recording is finalized and transient export/
+  // asset sessions are cancelled before Electron is allowed to tear down.
+  await Promise.allSettled([
+    stopRecordingFromMain(),
+    Promise.resolve(serverInfo?.exportSessions?.cancelAll()),
+    Promise.resolve(projectStore?.cancelAllAssets()),
+  ]);
+  showRecordingIndicator(false);
+  globalShortcut.unregisterAll();
+  const server = serverInfo?.server;
+  if (server?.listening) {
+    // app.exit() deliberately skips Electron's normal quit lifecycle. Close
+    // the localhost listener explicitly so no Node handle survives shutdown.
+    server.closeAllConnections?.();
+    await new Promise(resolve => server.close(() => resolve()));
+  }
+}
+
 function webRoot() {
   // dev: โฟลเดอร์โปรเจกต์ (มี index.html), packaged: ภายใน app
   return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
@@ -136,7 +158,7 @@ async function createWindow() {
   if (!ipcReady) {
     ipcReady = true;
     const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => {
-      if (!mainWindow || event.sender !== mainWindow.webContents) throw new Error('Untrusted IPC sender');
+      if (!mainWindow || event.sender !== mainWindow.webContents || !isTrustedRenderer(event.sender)) throw new Error('Untrusted IPC sender');
       return fn(...args);
     });
     handle('project:save', (document) => projectStore.save(document));
@@ -158,12 +180,18 @@ async function createWindow() {
     });
     handle('media:register-recording', (base) => {
       const safeBase = path.basename(String(base || '')).replace(/[^a-zA-Z0-9_.-]/g, '');
-      const result = serverInfo.registerMediaPath(path.join(serverInfo.recordingsDir, safeBase + '.mp4'));
+      const mediaPath = path.resolve(path.join(serverInfo.recordingsDir, safeBase + '.mp4'));
+      const result = serverInfo.registerMediaPath(mediaPath);
+      // Recordings are trusted local assets returned by our own capture pipeline.
+      // Authorize the canonical path as soon as it enters the editor so export's
+      // audio-plan guard accepts the same base media the renderer just loaded.
+      authorizedMediaPaths.add(mediaPath);
       const clicksPath = path.join(serverInfo.recordingsDir, safeBase + '.clicks.json');
       if (fs.existsSync(clicksPath)) result.clicksUrl = serverInfo.registerMediaPath(clicksPath).url;
       return result;
     });
     handle('media:persist', (arrayBuffer, extension) => {
+      if (!(arrayBuffer instanceof ArrayBuffer) || arrayBuffer.byteLength > 32 * 1024 * 1024) throw new Error('Invalid direct media asset');
       const filePath = projectStore.persistAsset(Buffer.from(arrayBuffer), extension);
       authorizedMediaPaths.add(path.resolve(filePath));
       return serverInfo.registerMediaPath(filePath);
@@ -233,6 +261,26 @@ async function createWindow() {
     });
     handle('system:recording-indicator', (active) => { showRecordingIndicator(active); return { ok: true }; });
     handle('system:stop-recording', () => stopRecordingFromMain().then(() => ({ ok: true })));
+    handle('window:close-response', async (payload = {}) => {
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid close payload');
+      if (!closeRequestId || payload.requestId !== closeRequestId) throw new Error('Stale close request');
+      if (!['save', 'discard', 'cancel'].includes(payload.decision)) throw new Error('Invalid close decision');
+      const decision = payload.decision;
+      closeRequestId = null;
+      if (decision === 'cancel') return { ok: true, closed: false };
+      closeInFlight = true;
+      try {
+        await cleanupBeforeWindowClose();
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+        // The close event is intercepted to show the renderer prompt. All
+        // cleanup has completed above, so exit deterministically after the
+        // user decision instead of leaving a headless macOS process behind.
+        app.exit(0);
+        return { ok: true, closed: true };
+      } finally {
+        closeInFlight = false;
+      }
+    });
   }
 
   mainWindow.loadURL(`http://127.0.0.1:${serverInfo.port}/?token=${serverInfo.apiToken}`);
@@ -250,7 +298,14 @@ async function createWindow() {
       noLink: true,
     }).then(({ response }) => { if (response === 0) stopRecordingFromMain(); });
   });
-  mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('close', (event) => {
+    if (closeInFlight) return;
+    event.preventDefault();
+    if (closeRequestId) return;
+    closeRequestId = crypto.randomBytes(12).toString('hex');
+    mainWindow.webContents.send('window:close-request', { requestId: closeRequestId });
+  });
+  mainWindow.on('closed', () => { mainWindow = null; closeRequestId = null; });
 }
 
 if (hasSingleInstanceLock) app.whenReady().then(async () => {

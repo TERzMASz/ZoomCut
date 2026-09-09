@@ -159,7 +159,12 @@
   .slider-row input[type=range] { flex: 1; accent-color: var(--accent); }
   .slider-row .val { width: 34px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
   .bg-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #bgTypeRow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #bgTypeRow .chip { min-width: 0; padding-inline: 2px; }
   .bg-swatch {
+    appearance: none;
+    min-width: 0;
+    padding: 0;
     aspect-ratio: 1;
     border-radius: 8px;
     cursor: pointer;
@@ -580,6 +585,20 @@
     border-radius: 8px;
     font-size: 12px;
   }
+  .shortcut-item.editing { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .shortcut-item button { font: inherit; }
+  .shortcut-binding { min-width: 92px; text-align: right; }
+  .shortcut-binding kbd { cursor: pointer; }
+  .shortcut-binding kbd[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+  .shortcut-customize { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; color:var(--muted); font-size:11px; }
+  .shortcut-error { color:var(--danger); min-height:16px; margin-top:8px; font-size:11px; }
+  #unsavedOverlay { position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center; background:rgba(4,6,12,.66); backdrop-filter: blur(8px); }
+  #unsavedOverlay.visible { display:flex; }
+  .unsaved-box { width:min(420px, calc(100vw - 32px)); padding:22px; border:1px solid var(--border); background:var(--panel); border-radius:16px; box-shadow:0 24px 80px rgba(0,0,0,.36); }
+  .unsaved-box h2 { font-size:17px; margin-bottom:8px; }
+  .unsaved-box p { color:var(--muted); font-size:12px; line-height:1.55; margin-bottom:18px; }
+  .unsaved-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+  @media (max-width:720px) { .shortcut-grid { grid-template-columns:1fr; } .unsaved-actions .btn { flex:1; } }
   kbd {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     border: 1px solid var(--border);
@@ -675,7 +694,9 @@
     transition: width .2s;
   }
   .export-box .sub { font-size: 12px; color: var(--muted); }
-  .project-status { font-size: 11px; color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-status { font-size: 11px; color: var(--muted); max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color .2s; }
+  .project-status.modified { color: var(--accent); }
+  .project-status[data-state="error"] { color: var(--danger); }
   #pickerOverlay {
     position: fixed;
     inset: 0;
@@ -752,6 +773,38 @@
   .picker-item .name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .picker-item .detail { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .picker-cancel { margin-top: 12px; align-self: flex-end; }
+  .picker-selection {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 8%, var(--panel2));
+  }
+  .picker-selection.visible { display: grid; gap: 10px; }
+  .picker-target { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .picker-target-icon { font-size: 22px; }
+  .picker-target-copy { min-width: 0; }
+  .picker-target-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .picker-target-detail { color: var(--muted); font-size: 11px; }
+  .picker-controls { display: flex; align-items: center; gap: 8px; }
+  .picker-controls label { color: var(--muted); font-size: 11px; }
+  .picker-controls select { min-width: 94px; }
+  .picker-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .recording-review {
+    position: fixed; top: 118px; left: 50%; transform: translateX(-50%); width: min(480px, calc(100vw - 28px));
+    display: grid; grid-template-columns: 116px 1fr; gap: 14px; padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border)); border-radius: 14px;
+    background: color-mix(in srgb, var(--panel) 96%, #000); box-shadow: 0 18px 50px rgba(0,0,0,.38); z-index: 255;
+  }
+  .recording-review[hidden] { display: none; }
+  .recording-review video { width: 116px; height: 76px; object-fit: cover; border-radius: 9px; background: #090b10; }
+  .recording-review-copy { min-width: 0; display: grid; gap: 4px; align-content: center; }
+  .recording-review-kicker { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .recording-review-name { width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 2px 0; background: transparent; color: var(--text); font-size: 13px; font-weight: 700; outline: none; }
+  .recording-review-meta { color: var(--muted); font-size: 11px; }
+  .recording-review-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+  @media (max-width: 560px) { .picker-box { width: calc(100vw - 24px); padding: 14px; } .recording-review { grid-template-columns: 88px 1fr; } .recording-review video { width: 88px; height: 64px; } }
   input[type=file] { display: none; }
   input[type=color] {
     width: 34px; height: 30px;
@@ -838,6 +891,7 @@
     <button class="rail-tool" data-shell-panel="audio" title="Audio"><i data-lucide="audio-lines"></i><span data-rail-label="audio">เสียง</span></button>
     <button class="rail-tool" data-shell-panel="camera" title="Camera"><i data-lucide="camera"></i><span data-rail-label="camera">กล้อง</span></button>
     <button class="rail-tool" data-shell-panel="clicks" title="Click and zoom"><i data-lucide="mouse-pointer-click"></i><span data-rail-label="clicks">คลิก</span></button>
+    <button class="rail-tool" data-shell-panel="annotations" title="Annotations"><i data-lucide="pen-line"></i><span data-rail-label="annotations">มาร์กอัป</span></button>
     <button class="rail-tool" data-shell-panel="style" title="Style"><i data-lucide="palette"></i><span data-rail-label="style">สไตล์</span></button>
     <button class="rail-tool" data-shell-panel="export" title="Export"><i data-lucide="upload"></i><span data-rail-label="export">ส่งออก</span></button>
     <span class="rail-spacer"></span>
@@ -873,62 +927,87 @@
       <div class="shell-section-copy"><strong data-shell-copy="settingsTitle">แอปและโปรเจกต์</strong><span data-shell-copy="settingsBody">ภาษา ธีม คีย์ลัด และเครื่องมือตรวจสอบ</span></div>
       <div class="settings-slot" id="settingsSlot"></div>
     </div>
-    <h3 id="sectionPreset">Preset</h3>
-    <div class="row">
+    <div class="shell-panel-intro" data-editor-panel="annotations">
+      <div class="shell-section-copy"><strong data-shell-copy="annotationsTitle">มาร์กอัปบนวิดีโอ</strong><span data-shell-copy="annotationsBody">เลือกเครื่องมือแล้วลากบนตัวอย่าง เพื่อเพิ่มข้อความ ลูกศร กรอบ ไฮไลต์ หรือเบลอ</span></div>
+      <div class="annotation-tool-grid" id="annotationToolGrid" role="toolbar" aria-label="Annotation tools">
+        <button class="chip annotation-tool active" type="button" data-annotation-tool="select" title="เลือก">↖ <span>เลือก</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="text" title="ข้อความ">T <span>ข้อความ</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="arrow" title="ลูกศร">↗ <span>ลูกศร</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="rectangle" title="กรอบ">□ <span>กรอบ</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="highlight" title="ไฮไลต์">▱ <span>ไฮไลต์</span></button>
+        <button class="chip annotation-tool" type="button" data-annotation-tool="blur" title="เบลอ">◌ <span>เบลอ</span></button>
+      </div>
+      <div class="tip" id="annotationToolTip">ลากบนภาพเพื่อสร้างมาร์กอัปที่ตำแหน่งหัวอ่าน • ยาวเริ่มต้น 3 วินาที</div>
+    </div>
+    <h3 class="inspector-section-header" id="sectionPreset">Preset</h3>
+    <div class="row preset-card-row" data-preset-cards>
       <select id="presetSel" class="mini-select"><option value="">— เลือก preset —</option></select>
       <button class="btn small" id="presetSave" title="บันทึกค่าปัจจุบันเป็น preset">💾</button>
       <button class="btn small danger" id="presetDel" title="ลบ preset ที่เลือก">🗑</button>
     </div>
 
-    <h3 id="sectionAspect">สัดส่วนภาพ</h3>
-    <div class="row" id="aspectRow">
-      <div class="chip" data-aspect="16:9">16:9</div>
-      <div class="chip active" data-aspect="9:16">9:16</div>
-      <div class="chip" data-aspect="4:5">4:5</div>
-      <div class="chip" data-aspect="1:1">1:1</div>
-      <div class="chip" data-aspect="fit" title="พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ">📐 พอดีเฟรม</div>
+    <h3 class="inspector-section-header" id="sectionAspect">สัดส่วนภาพ</h3>
+    <div class="row segmented-control" id="aspectRow" role="radiogroup" aria-label="Aspect ratio">
+      <button type="button" class="chip" data-aspect="16:9">16:9</button>
+      <button type="button" class="chip active" data-aspect="9:16">9:16</button>
+      <button type="button" class="chip" data-aspect="4:5">4:5</button>
+      <button type="button" class="chip" data-aspect="1:1">1:1</button>
+      <button type="button" class="chip" data-aspect="fit" title="พอดีเฟรม — เนื้อหาเต็มพื้นที่ ไม่มีพื้นหลังรอบ">📐 พอดีเฟรม</button>
     </div>
 
-    <h3 id="sectionPosition">ตำแหน่งแนวตั้ง</h3>
-    <div class="row" id="posRow">
-      <div class="chip" data-pos="top">บน</div>
-      <div class="chip active" data-pos="center">กลาง</div>
-      <div class="chip" data-pos="bottom">ล่าง</div>
+    <h3 class="inspector-section-header" id="sectionPosition">ตำแหน่งแนวตั้ง</h3>
+    <div class="row segmented-control" id="posRow" role="radiogroup" aria-label="Vertical position">
+      <button type="button" class="chip" data-pos="top">บน</button>
+      <button type="button" class="chip active" data-pos="center">กลาง</button>
+      <button type="button" class="chip" data-pos="bottom">ล่าง</button>
     </div>
 
-    <h3 id="sectionFrame">กรอบอุปกรณ์</h3>
-    <div class="row" id="frameRow">
-      <div class="chip active" data-frame="none">ไม่มี</div>
-      <div class="chip" data-frame="iphone">📱 iPhone</div>
-      <div class="chip" data-frame="browser">🖥 เบราว์เซอร์</div>
+    <h3 class="inspector-section-header" id="sectionFrame">กรอบอุปกรณ์</h3>
+    <div class="row segmented-control" id="frameRow" role="radiogroup" aria-label="Device frame">
+      <button type="button" class="chip active" data-frame="none">ไม่มี</button>
+      <button type="button" class="chip" data-frame="iphone">📱 iPhone</button>
+      <button type="button" class="chip" data-frame="browser">🖥 เบราว์เซอร์</button>
     </div>
     <div class="row" id="phoneColors" style="margin-top:8px; display:none; gap:8px"></div>
     <input type="text" id="urlText" class="url-input" placeholder="yourwebsite.com" style="display:none">
 
-    <h3 id="sectionStatusBar">Status Bar (iPhone)</h3>
-    <div class="row" id="sbRow">
-      <div class="chip active" data-sb="none">ปิด</div>
-      <div class="chip" data-sb="auto">ออโต้</div>
-      <div class="chip" data-sb="light">สว่าง</div>
-      <div class="chip" data-sb="dark">มืด</div>
+    <h3 class="inspector-section-header" id="sectionStatusBar">Status Bar (iPhone)</h3>
+    <div class="row segmented-control" id="sbRow" role="radiogroup" aria-label="Status bar">
+      <button type="button" class="chip active" data-sb="none">ปิด</button>
+      <button type="button" class="chip" data-sb="auto">ออโต้</button>
+      <button type="button" class="chip" data-sb="light">สว่าง</button>
+      <button type="button" class="chip" data-sb="dark">มืด</button>
     </div>
 
-    <h3 id="sectionTap">เอฟเฟกต์จุดแตะ</h3>
-    <div class="row" id="tapRow">
-      <div class="chip active" data-tap="on">💧 แสดง</div>
-      <div class="chip" data-tap="off">ปิด</div>
+    <h3 class="inspector-section-header" id="sectionTap">เอฟเฟกต์จุดแตะ</h3>
+    <div class="row segmented-control" id="tapRow" role="radiogroup" aria-label="Click effect">
+      <button type="button" class="chip active" data-tap="on">💧 แสดง</button>
+      <button type="button" class="chip" data-tap="off">ปิด</button>
     </div>
 
-    <h3 id="sectionBackground">พื้นหลัง</h3>
-    <div class="bg-grid" id="bgGrid"></div>
+    <h3 class="inspector-section-header" id="sectionBackground">พื้นหลัง</h3>
+    <div class="row segmented-control" id="bgTypeRow" role="radiogroup" aria-label="Background type">
+      <button type="button" class="chip active" data-bg-type="gradient">Gradient</button>
+      <button type="button" class="chip" data-bg-type="color">Color</button>
+      <button type="button" class="chip" data-bg-type="image">Image</button>
+      <button type="button" class="chip" data-bg-type="video" disabled title="Video background จะเปิดเมื่อมี media asset ที่รองรับ">Video</button>
+    </div>
+    <div class="bg-grid" id="bgGrid" role="radiogroup" aria-label="Background presets"></div>
     <div class="row" style="margin-top:8px; align-items:center">
+      <input type="color" id="bgColor" value="#151821" title="สีพื้นหลัง">
       <input type="color" id="cg1" value="#0ea5e9" title="gradient กำหนดเอง สี 1">
       <input type="color" id="cg2" value="#8b5cf6" title="gradient กำหนดเอง สี 2">
-      <div class="chip" id="bgImageBtn" title="อัปโหลดรูปพื้นหลัง">🖼 รูป</div>
-      <div class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</div>
+      <button type="button" class="chip" id="bgImageBtn" title="อัปโหลดรูปพื้นหลัง">🖼 รูป</button>
+      <button type="button" class="chip" id="bgTransBtn" title="พื้นหลังโปร่งใส (Export PNG)">⬜ ใส</button>
+    </div>
+    <div class="tip" id="bgPersistenceNote">รูปพื้นหลังจากไฟล์ใช้ชั่วคราวใน session นี้ — ยังไม่ถูกฝังในไฟล์โปรเจกต์</div>
+    <div class="slider-row">
+      <label for="bgBlur">Blur</label>
+      <input type="range" id="bgBlur" min="0" max="40" value="0" step="1">
+      <span class="val" id="bgBlurVal">0</span>
     </div>
 
-    <h3 id="sectionVideoFrame">เฟรมวิดีโอ</h3>
+    <h3 class="inspector-section-header" id="sectionVideoFrame">เฟรมวิดีโอ</h3>
     <div class="slider-row">
       <label>ขอบรอบ</label>
       <input type="range" id="padding" min="0" max="20" value="0">
@@ -944,8 +1023,11 @@
       <input type="range" id="shadow" min="0" max="100" value="60">
       <span class="val" id="shadowVal">60</span>
     </div>
+    <div class="row">
+      <button type="button" class="chip inspector-reset" id="frameReset">↺ ล้างเฟรม</button>
+    </div>
 
-    <h3 id="sectionCrop">ตัดขอบ (Crop)</h3>
+    <h3 class="inspector-section-header" id="sectionCrop">ตัดขอบ (Crop)</h3>
     <div class="tip" id="cropTip" style="margin-top:0">ตัดขอบหน้าต่าง iPhone Mirroring ออก เพื่อไม่ให้เห็นขอบตอนซูม</div>
     <div class="slider-row">
       <label>บน</label>
@@ -968,18 +1050,18 @@
       <span class="val" id="cropRVal">0%</span>
     </div>
     <div class="row">
-      <div class="chip" id="cropReset">↺ ล้าง crop</div>
-      <div class="chip" id="cropToggle" title="สลับแสดง/ซ่อนขอบที่จะถูกตัด">👁 ดูขอบ</div>
-      <div class="chip" id="debugToggle" title="แสดงพิกัด crop/source/camera สำหรับตรวจ zoom">🧭 Debug</div>
+      <button type="button" class="chip inspector-reset" id="cropReset">↺ ล้าง crop</button>
+      <button type="button" class="chip" id="cropToggle" title="สลับแสดง/ซ่อนขอบที่จะถูกตัด">👁 ดูขอบ</button>
+      <button type="button" class="chip" id="debugToggle" title="แสดงพิกัด crop/source/camera สำหรับตรวจ zoom">🧭 Debug</button>
     </div>
 
-    <h3 id="sectionZoomDefaults">ค่าเริ่มต้นการซูม</h3>
-    <div class="row" id="zoomStyleRow">
-      <div class="chip active" data-zoom-style="subtle">Subtle</div>
-      <div class="chip" data-zoom-style="focus">Focus</div>
-      <div class="chip" data-zoom-style="fast">Fast</div>
-      <div class="chip" data-zoom-style="cinematic">Cinematic</div>
-      <div class="chip" data-zoom-style="taponly">Tap only</div>
+    <h3 class="inspector-section-header" id="sectionZoomDefaults">ค่าเริ่มต้นการซูม</h3>
+    <div class="row segmented-control" id="zoomStyleRow" role="radiogroup" aria-label="Zoom style">
+      <button type="button" class="chip active" data-zoom-style="subtle">Subtle</button>
+      <button type="button" class="chip" data-zoom-style="focus">Focus</button>
+      <button type="button" class="chip" data-zoom-style="fast">Fast</button>
+      <button type="button" class="chip" data-zoom-style="cinematic">Cinematic</button>
+      <button type="button" class="chip" data-zoom-style="taponly">Tap only</button>
     </div>
     <div class="slider-row">
       <label>ระดับซูม</label>
@@ -993,17 +1075,34 @@
     </div>
 
     <div id="imgExportSec" style="display:none">
-      <h3 id="sectionImageExport">ความละเอียด Export (PNG)</h3>
-      <div class="row" id="scaleRow">
-        <div class="chip" data-scale="1">1x</div>
-        <div class="chip active" data-scale="2">2x</div>
-        <div class="chip" data-scale="3">3x</div>
+      <h3 class="inspector-section-header" id="sectionImageExport">ความละเอียด Export (PNG)</h3>
+      <div class="row segmented-control" id="scaleRow" role="radiogroup" aria-label="Export scale">
+        <button type="button" class="chip" data-scale="1">1x</button>
+        <button type="button" class="chip active" data-scale="2">2x</button>
+        <button type="button" class="chip" data-scale="3">3x</button>
       </div>
     </div>
     <div class="tip">
       💡 <b>วิธีใช้:</b> เล่นวิดีโอถึงจังหวะที่กดปุ่มในแอป แล้ว<b>คลิกบนวิดีโอ</b>ตรงจุดนั้น — โปรแกรมจะซูมเข้า-ออกให้อัตโนมัติแบบนุ่มๆ<br><br>
       ลาก marker บน timeline เพื่อย้ายเวลา, คลิก marker เพื่อแก้ระดับซูม/ลบ
     </div>
+    <details class="inspector-advanced" id="advancedInspector">
+      <summary><span data-shell-copy="advanced">ขั้นสูง</span><span class="advanced-meta">schema v2</span></summary>
+      <p data-shell-copy="advancedBody">ปรับ cursor, เอฟเฟกต์คลิก และเครื่องมือช่วยตรวจเฟรม</p>
+      <div class="advanced-controls" aria-label="Cursor settings">
+        <div class="row segmented-control" id="cursorStyleRow" role="radiogroup" aria-label="Cursor style">
+          <button type="button" class="chip active" data-cursor-style="soft">Soft</button><button type="button" class="chip" data-cursor-style="outline">Outline</button><button type="button" class="chip" data-cursor-style="classic">Classic</button><button type="button" class="chip" data-cursor-style="shadow">Shadow</button><button type="button" class="chip" data-cursor-style="solid">Solid</button><button type="button" class="chip" data-cursor-style="dot">Dot</button><button type="button" class="chip" data-cursor-style="pointer">Pointer</button>
+        </div>
+        <div class="row segmented-control" id="cursorEffectRow" role="radiogroup" aria-label="Cursor click effect">
+          <button type="button" class="chip active" data-cursor-effect="ripple">Ripple</button><button type="button" class="chip" data-cursor-effect="none">None</button><button type="button" class="chip" data-cursor-effect="ring">Ring</button><button type="button" class="chip" data-cursor-effect="pulse">Pulse</button><button type="button" class="chip" data-cursor-effect="target">Target</button>
+        </div>
+        <div class="slider-row"><label for="cursorSize">Cursor</label><input type="range" id="cursorSize" min="0.5" max="2.5" step="0.05" value="1"><span class="val" id="cursorSizeVal">1.0x</span></div>
+        <div class="slider-row"><label for="cursorSmoothing">Smooth</label><input type="range" id="cursorSmoothing" min="0" max="1" step="0.05" value="0.65"><span class="val" id="cursorSmoothingVal">65%</span></div>
+        <div class="slider-row"><label for="cursorBounce">Bounce</label><input type="range" id="cursorBounce" min="0" max="2" step="0.05" value="1"><span class="val" id="cursorBounceVal">1.0</span></div>
+        <div class="slider-row"><label for="cursorSway">Sway</label><input type="range" id="cursorSway" min="0" max="2" step="0.05" value="0"><span class="val" id="cursorSwayVal">0.0</span></div>
+        <div class="row"><button type="button" class="chip" id="cursorReset">↺ Reset cursor</button></div>
+      </div>
+    </details>
   </div>
 
   <div class="splitter-vertical" id="sidebarSplitter" title="Drag to resize sidebar"></div>
@@ -1059,10 +1158,12 @@
             <button class="btn small add-lane-btn" id="addVideoLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Video lane</span></button>
             <button class="btn small add-lane-btn" id="addVoiceLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Voice lane</span></button>
             <button class="btn small add-lane-btn" id="addCameraLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Camera lane</span></button>
+            <button class="btn small add-lane-btn" id="addAnnotationLane"><span class="add-lane-icon" aria-hidden="true">+</span><span data-lane-text>Annotation lane</span></button>
           </div>
           <div class="track-group" id="videoTrackGroup"></div>
           <div class="track-group" id="voiceTrackGroup"></div>
           <div class="track-group" id="cameraTrackGroup"></div>
+          <div class="track-group" id="annotationTrackGroup"></div>
         </div>
       </div>
       <div class="marker-edit" id="cameraEdit">
@@ -1124,6 +1225,21 @@
         <button class="btn small danger" id="segDelete">🗑 ตัดท่อนนี้ออก</button>
         <button class="btn small panel-close" id="segClose" title="Close">×</button>
       </div>
+      <div class="marker-edit" id="annotationEdit">
+        <span id="annotationEditLabel">✦ มาร์กอัป</span>
+        <span><label>เครื่องมือ </label><select class="speed-select" id="annotationType"><option value="text">ข้อความ</option><option value="arrow">ลูกศร</option><option value="rectangle">กรอบ</option><option value="highlight">ไฮไลต์</option><option value="blur">เบลอ</option></select></span>
+        <label id="annotationTextWrap">ข้อความ <textarea id="annotationText" rows="3" maxlength="16384" placeholder="พิมพ์ข้อความ…"></textarea></label>
+        <span id="annotationTextStyleWrap"><label>ฟอนต์ </label><select class="speed-select" id="annotationFontFamily"><option value="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">System</option><option value="Arial, sans-serif">Arial</option><option value="Georgia, serif">Georgia</option><option value="ui-monospace, SFMono-Regular, Menlo, monospace">Mono</option></select></span>
+        <span id="annotationAlignWrap"><label>จัดแนว </label><select class="speed-select" id="annotationAlign"><option value="left">ซ้าย</option><option value="center">กลาง</option><option value="right">ขวา</option></select></span>
+        <span><label>สี </label><input type="color" id="annotationColor" value="#8ea2ff"></span>
+        <span id="annotationFontWrap"><label>ขนาด </label><input type="range" id="annotationFontSize" min="1" max="15" step="0.5"><span class="val" id="annotationFontSizeVal">4.5%</span></span>
+        <span><label>ความทึบ </label><input type="range" id="annotationOpacity" min="0" max="1" step="0.05"><span class="val" id="annotationOpacityVal">100%</span></span>
+        <span><label>เริ่ม </label><input type="range" id="annotationStart" min="0" max="1" step="0.01"><span class="val" id="annotationStartVal">0:00</span></span>
+        <span><label>ความยาว </label><input type="range" id="annotationDuration" min="0.05" max="3" step="0.05"><span class="val" id="annotationDurationVal">3.0s</span></span>
+        <span><label>เลน </label><select class="speed-select" id="annotationLane"></select></span>
+        <div class="row"><button class="btn small" id="annotationDuplicate" type="button">คัดลอก</button><button class="btn small danger" id="annotationDelete" type="button">ลบ</button></div>
+        <button class="btn small panel-close" id="annotationClose" title="Close" type="button">×</button>
+      </div>
       <div class="marker-edit" id="markerEdit">
         <span>🔍 Zoom marker</span>
         <span><label>ระดับ </label><input type="range" id="mZoom" min="1.2" max="4" step="0.1"> <span class="val" id="mZoomVal"></span></span>
@@ -1149,8 +1265,19 @@
     <h2>เลือกสิ่งที่จะอัด</h2>
     <div class="sub">เหมือนแชร์จอใน meeting — เลือกหน้าต่างที่ต้องการ แล้วทุกคลิกจะกลายเป็นจุดซูมอัตโนมัติ</div>
     <div class="picker-list" id="pickerList"></div>
+    <div class="picker-selection" id="pickerSelection" aria-live="polite">
+      <div class="picker-target"><span class="picker-target-icon" id="pickerTargetIcon">🖥</span><div class="picker-target-copy"><div class="picker-target-name" id="pickerTargetName"></div><div class="picker-target-detail" id="pickerTargetDetail"></div></div></div>
+      <div class="picker-controls"><label for="recordCountdown">เริ่มอัดใน</label><select class="mini-select" id="recordCountdown" aria-label="Countdown"><option value="0">ทันที</option><option value="3" selected>3 วินาที</option><option value="5">5 วินาที</option></select></div>
+      <div class="picker-actions"><button class="btn small" id="pickerChangeSource" type="button">เปลี่ยนแหล่ง</button><button class="btn small primary" id="pickerRecord" type="button">🔴 เริ่มอัด</button></div>
+    </div>
     <button class="btn small picker-cancel" id="pickerCancel">ยกเลิก</button>
   </div>
+</div>
+
+<div class="recording-review" id="recordingReview" hidden role="dialog" aria-labelledby="recordingReviewTitle">
+  <video id="recordingReviewVideo" muted playsinline preload="metadata"></video>
+  <div class="recording-review-copy"><span class="recording-review-kicker">Review ready</span><input class="recording-review-name" id="recordingReviewTitle" value="Screen recording" aria-label="Recording name"><span class="recording-review-meta" id="recordingReviewMeta"></span></div>
+  <div class="recording-review-actions"><button class="btn small" id="recordingReviewPlay" type="button">▶️ เล่น</button><button class="btn small" id="recordingReviewRerecord" type="button">↺ อัดใหม่</button><button class="btn small danger" id="recordingReviewDiscard" type="button">ลบออกจากรายการ</button><button class="btn small primary" id="recordingReviewOpen" type="button">เปิดใน editor</button></div>
 </div>
 
 <div id="diagOverlay">
@@ -1171,6 +1298,16 @@
       <button class="btn small" id="shortcutClose">ปิด</button>
     </div>
     <div class="shortcut-grid" id="shortcutGrid"></div>
+    <div class="shortcut-customize"><span id="shortcutCustomizeHint">เลือกคีย์ลัดแล้วกดปุ่มใหม่</span><button class="btn small" id="shortcutReset" type="button">คืนค่าเริ่มต้น</button></div>
+    <div class="shortcut-error" id="shortcutError" aria-live="polite"></div>
+  </div>
+</div>
+
+<div id="unsavedOverlay" role="dialog" aria-modal="true" aria-labelledby="unsavedTitle">
+  <div class="unsaved-box">
+    <h2 id="unsavedTitle">มีการแก้ไขที่ยังไม่ได้บันทึก</h2>
+    <p id="unsavedBody">ต้องการบันทึกการเปลี่ยนแปลงก่อนดำเนินการต่อหรือไม่?</p>
+    <div class="unsaved-actions"><button class="btn" id="unsavedCancel" type="button">ยกเลิก</button><button class="btn danger" id="unsavedDiscard" type="button">ปิดต่อโดยไม่บันทึก</button><button class="btn primary" id="unsavedSave" type="button">บันทึกและดำเนินการต่อ</button></div>
   </div>
 </div>
 
@@ -1189,6 +1326,8 @@
 
 <script src="/shared/lucide.min.js"></script>
 <script src="/shared/editor-core.js"></script>
+<script src="/shared/shortcut-registry.js"></script>
+<script src="/shared/project-revision.js"></script>
 <script src="/shared/editor-app.js"></script>
 <script src="/shared/editor-shell.js"></script>
 </body>

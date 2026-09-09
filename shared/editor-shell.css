@@ -133,6 +133,7 @@ body[data-theme="light"] {
   background: var(--shell-surface);
   border-color: var(--shell-line);
   overflow-x: hidden;
+  overflow-anchor: none;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--shell-muted) 45%, transparent) transparent;
 }
@@ -193,6 +194,10 @@ body[data-theme="light"] {
 .shell-primary-action.record-action { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .shell-secondary-action, .shell-action { border: 1px solid var(--shell-line); background: var(--shell-surface-2); color: var(--shell-muted); }
 .shell-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.annotation-tool-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.annotation-tool { min-height: 42px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10px; }
+.annotation-tool span { font-size: 9px; }
+.annotation-tool.active { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, var(--shell-surface-3)); border-color: color-mix(in srgb, var(--accent) 70%, var(--shell-line)); }
 .settings-slot { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 6px; }
 .settings-slot > * { width: 100% !important; min-width: 0; }
 .device-slot { display: flex; flex-direction: column; gap: 7px; }
@@ -201,13 +206,51 @@ body[data-theme="light"] {
 .device-slot #camToggle { width: 100%; }
 
 .sidebar h3 { margin: 15px 0 7px; font-size: 10px; letter-spacing: 0; }
+.sidebar .inspector-section-header {
+  margin: 17px 0 8px;
+  padding: 0 2px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: .035em;
+  text-transform: none;
+}
+.sidebar .inspector-section-header::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: .85;
+}
 .sidebar .row { gap: 5px; }
 .sidebar .chip { min-width: 48px; padding: 6px 5px; border-radius: 6px; font-size: 10px; }
+.sidebar button.chip { font: inherit; }
+.segmented-control { padding: 3px; border: 1px solid var(--shell-line); border-radius: 8px; gap: 3px !important; background: color-mix(in srgb, var(--shell-surface-2) 75%, transparent); }
+.segmented-control .chip { flex: 1 1 auto; min-width: 0; border-color: transparent; background: transparent; transition: background .16s, color .16s, box-shadow .16s; }
+.segmented-control .chip.active { color: var(--text); background: var(--shell-surface-3); box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.segmented-control .chip:focus-visible, .chip:focus-visible, .preset-card-row > *:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.preset-card-row { align-items: stretch; }
+.preset-card-row #presetSel { min-width: 0; flex: 1 1 auto; }
+.preset-card-row .btn { min-width: 32px; }
 .sidebar .slider-row { display: grid; grid-template-columns: 62px minmax(0,1fr) 34px; gap: 7px; margin: 9px 0; font-size: 10px; }
 .sidebar .slider-row label { width: auto; }
+.sidebar .slider-row input[type="range"] { min-width: 0; height: 18px; }
+.sidebar .slider-row .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
 .sidebar .bg-grid { gap: 5px; }
 .sidebar .bg-swatch { border-radius: 5px; }
 .sidebar .tip { font-size: 10px; line-height: 1.5; }
+.inspector-advanced { margin: 16px 0 4px; border: 1px solid var(--shell-line); border-radius: 8px; background: color-mix(in srgb, var(--shell-surface-2) 72%, transparent); overflow: hidden; }
+.inspector-advanced summary { min-height: 34px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; color: var(--text); font-size: 10px; font-weight: 700; list-style: none; }
+.inspector-advanced summary::-webkit-details-marker { display: none; }
+.inspector-advanced summary::before { content: '＋'; width: 16px; color: var(--shell-muted); }
+.inspector-advanced[open] summary::before { content: '−'; }
+.inspector-advanced summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.advanced-meta { color: var(--shell-muted); font-size: 9px; font-weight: 500; }
+.inspector-advanced p { margin: 0; padding: 0 10px 11px 26px; color: var(--shell-muted); font-size: 10px; line-height: 1.5; }
 
 #sidebarSplitter {
   grid-column: 3;
@@ -421,6 +464,15 @@ body[data-theme="light"] #editorShell .timeline-area { background: #f5f7fa; }
 body[data-theme="light"] #editorShell .lane-label { background: #eef1f5; }
 #editorShell .seg-track, #editorShell .voice-track, #editorShell .camera-track { height: 36px; border-radius: 5px; }
 #editorShell .seg-block, #editorShell .voice-clip, #editorShell .camera-clip { border-radius: 4px; }
+#editorShell .annotation-track { height: 36px; border-radius: 5px; position: relative; background: color-mix(in srgb, #9a8cff 8%, var(--shell-surface-2)); }
+#editorShell .annotation-clip { position: absolute; top: 4px; height: 28px; min-width: 12px; padding: 0 8px; display: flex; align-items: center; gap: 4px; border: 1px solid color-mix(in srgb, #9a8cff 64%, var(--shell-line)); border-radius: 4px; color: #f1efff; background: linear-gradient(135deg, rgba(143,125,255,.58), rgba(71,77,164,.62)); font-size: 10px; cursor: grab; overflow: hidden; }
+#editorShell .annotation-clip.selected { outline: 2px solid #c0b8ff; outline-offset: 1px; }
+#editorShell .annotation-clip .annotation-handle { position: absolute; top: 0; width: 14px; height: 100%; margin: 0; border-radius: 4px; background: rgba(255,255,255,.78); cursor: ew-resize; z-index: 2; box-shadow: 0 0 0 1px rgba(11,14,24,.22); }
+#editorShell .annotation-clip .annotation-handle.left { left: -1px; }
+#editorShell .annotation-clip .annotation-handle.right { right: -1px; }
+#editorShell .annotation-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#editorShell #annotationEdit.lane-locked { opacity: .62; }
+#editorShell #annotationEdit.lane-locked::after { content: '🔒'; margin-left: 4px; color: var(--shell-muted); }
 
 @media (max-width: 1120px) {
   :root { --shell-inspector: 240px; }
