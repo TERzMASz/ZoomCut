@@ -9,6 +9,7 @@ const PROJECT_VERSION = editorCore.PROJECT_VERSION;
 const PROJECT_EXT = '.zoomcut';
 const MAX_PROJECT_BYTES = 32 * 1024 * 1024;
 const MAX_ASSET_CHUNK_BYTES = 32 * 1024 * 1024;
+const MAX_DIRECT_ASSET_BYTES = MAX_ASSET_CHUNK_BYTES;
 const MAX_ASSET_BYTES = 20 * 1024 * 1024 * 1024;
 
 function readProject(filePath) {
@@ -103,6 +104,7 @@ function createProjectStore({ userData, dialog }) {
 
   function persistAsset(buffer, extension = 'bin') {
     if (!Buffer.isBuffer(buffer)) buffer = Buffer.from(buffer);
+    if (buffer.length > MAX_DIRECT_ASSET_BYTES) throw new Error('Recorded media asset exceeds direct-write size limit');
     const ext = String(extension).replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin';
     const digest = crypto.createHash('sha256').update(buffer).digest('hex');
     const filePath = path.join(assetsDir, `${digest}.${ext}`);
@@ -177,4 +179,4 @@ function createProjectStore({ userData, dialog }) {
   return { save, open, autosave, recovery, clearRecovery, resetCurrent, persistAsset, beginAsset, appendAsset, finishAsset, cancelAsset, cancelAllAssets, autosavePath, assetsDir };
 }
 
-module.exports = { PROJECT_VERSION, MAX_PROJECT_BYTES, MAX_ASSET_CHUNK_BYTES, MAX_ASSET_BYTES, validateProject, projectMediaPaths, missingMedia, atomicWriteJson, readProject, createProjectStore };
+module.exports = { PROJECT_VERSION, MAX_PROJECT_BYTES, MAX_ASSET_CHUNK_BYTES, MAX_DIRECT_ASSET_BYTES, MAX_ASSET_BYTES, validateProject, projectMediaPaths, missingMedia, atomicWriteJson, readProject, createProjectStore };

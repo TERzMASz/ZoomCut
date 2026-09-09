@@ -121,7 +121,9 @@
     // Keep old settings as the source of truth while exposing the names used
     // by the new inspector.  This is intentionally additive for old runtimes.
     if (settings.cursorSettings === undefined) settings.cursorSettings = defaultCursorSettings();
-    if (settings.shortcuts === undefined) settings.shortcuts = {};
+    // Shortcut bindings are app preferences, not project content. Keep the
+    // validator backward-compatible with v2 files, but never write them into
+    // newly-created project documents.
     settings.background = defaultBackground(settings.background, settings);
     settings.frameStyle = defaultFrameStyle(settings.frameStyle, settings);
     if (state.cursorPoints === undefined) state.cursorPoints = [];
@@ -133,10 +135,11 @@
   function createProject(state, metadata = {}) {
     const settings = {};
     for (const key of SETTINGS_FIELDS) {
+      if (key === 'shortcuts') continue;
       if (state[key] !== undefined) settings[key] = JSON.parse(JSON.stringify(state[key]));
     }
     if (settings.cursorSettings === undefined) settings.cursorSettings = defaultCursorSettings();
-    if (settings.shortcuts === undefined) settings.shortcuts = {};
+    // Shortcut bindings live in localStorage at the app level.
     // During the M1 transition the live renderer still edits legacy fields.
     // Merge those active values into the v2 structures while retaining v2-only
     // properties such as blur/colors; later inspectors must update both views.
@@ -439,11 +442,10 @@
     for (const key of SETTINGS_FIELDS) if (document.settings?.[key] !== undefined) settings[key] = document.settings[key];
     document.settings = settings;
     if (document.settings.cursorSettings === undefined) document.settings.cursorSettings = defaultCursorSettings();
-    if (document.settings.shortcuts === undefined) document.settings.shortcuts = {};
     document.settings.background = defaultBackground(document.settings.background, document.settings);
     document.settings.frameStyle = defaultFrameStyle(document.settings.frameStyle, document.settings);
     document.settings.cursorSettings = validateCursorSettings(document.settings.cursorSettings);
-    document.settings.shortcuts = validateShortcuts(document.settings.shortcuts || {});
+    if (document.settings.shortcuts !== undefined) document.settings.shortcuts = validateShortcuts(document.settings.shortcuts || {});
     document.settings.laneSettings = validateLaneSettings(document.settings.laneSettings);
     for (const segment of document.state.segments) {
       if (!segment || typeof segment !== 'object') throw new Error('Timeline segment is invalid');

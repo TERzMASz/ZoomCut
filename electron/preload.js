@@ -15,6 +15,12 @@ function appendMediaChunk(sessionId, arrayBuffer) {
   return ipcRenderer.invoke('media:append-stream', sessionId, arrayBuffer);
 }
 
+function persistMediaAsset(arrayBuffer, extension) {
+  if (Object.prototype.toString.call(arrayBuffer) !== '[object ArrayBuffer]') return Promise.reject(new Error('Recorded media asset must be an ArrayBuffer'));
+  if (arrayBuffer.byteLength > MAX_EXPORT_CHUNK_BYTES) return Promise.reject(new Error('Recorded media asset exceeds direct-write size limit'));
+  return ipcRenderer.invoke('media:persist', arrayBuffer, extension);
+}
+
 contextBridge.exposeInMainWorld('zoomcutDesktop', {
   getPathForFile: (file) => webUtils.getPathForFile(file),
   project: {
@@ -25,7 +31,7 @@ contextBridge.exposeInMainWorld('zoomcutDesktop', {
     clearRecovery: () => ipcRenderer.invoke('project:clear-recovery'),
     resetCurrent: () => ipcRenderer.invoke('project:reset-current'),
     registerProjectPath: (filePath) => ipcRenderer.invoke('media:register-project-path', filePath),
-    persistAsset: (arrayBuffer, extension) => ipcRenderer.invoke('media:persist', arrayBuffer, extension),
+    persistAsset: persistMediaAsset,
     beginStream: (extension) => ipcRenderer.invoke('media:begin-stream', extension),
     appendStream: appendMediaChunk,
     finishStream: (sessionId) => ipcRenderer.invoke('media:finish-stream', sessionId),
@@ -47,6 +53,15 @@ contextBridge.exposeInMainWorld('zoomcutDesktop', {
     openPrivacy: (pane) => ipcRenderer.invoke('system:open-privacy', pane),
     recordingIndicator: (active) => ipcRenderer.invoke('system:recording-indicator', Boolean(active)),
     stopRecording: () => ipcRenderer.invoke('system:stop-recording'),
+    respondClose: (payload) => {
+      if (!payload || typeof payload !== 'object' || !['save', 'discard', 'cancel'].includes(payload.decision)) return Promise.reject(new Error('Invalid close decision'));
+      return ipcRenderer.invoke('window:close-response', { requestId: String(payload.requestId || ''), decision: payload.decision });
+    },
+    onCloseRequest: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('window:close-request', listener);
+      return () => ipcRenderer.removeListener('window:close-request', listener);
+    },
     onRecordingStopped: (callback) => {
       const listener = () => callback();
       ipcRenderer.on('recording:stopped', listener);

@@ -12,6 +12,10 @@ const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
 const desktop = window.zoomcutDesktop || null;
 const API_TOKEN = new URLSearchParams(location.search).get('token') || '';
+const shortcutRegistry = globalThis.ZoomCutShortcuts?.createShortcutRegistry({
+  storage: window.localStorage,
+  definitions: globalThis.ZoomCutShortcuts?.DEFAULT_ACTIONS,
+});
 
 const state = {
   loaded: false,
@@ -76,6 +80,10 @@ const state = {
   projectPath: null,
   projectCreatedAt: null,
   dirty: false,
+  revision: 0,
+  savedRevision: 0,
+  autosavedRevision: 0,
+  saveState: 'clean',
 };
 let nextId = 1;
 let videoClipId = 1;
@@ -120,7 +128,7 @@ const I18N = {
   th: {
     hint: 'อัดหน้าจอ iPhone (Control Center) → ลากไฟล์มาที่นี่ → คลิกจุดที่อยากซูม → Export',
     newJob: '🆕 งานใหม่', diagnostics: '🩺 ตรวจระบบ', record: '🔴 อัดหน้าจอ',
-    projectOpen: '📂 เปิดงาน', projectSave: '💾 บันทึกงาน', projectSaved: 'บันทึกแล้ว', projectAutosaved: 'สำรองอัตโนมัติแล้ว',
+    projectOpen: '📂 เปิดงาน', projectSave: '💾 บันทึกงาน', projectSaved: 'บันทึกแล้ว', projectAutosaved: 'สำรองอัตโนมัติแล้ว • ยังไม่ได้บันทึกไฟล์', projectModified: 'มีการแก้ไขที่ยังไม่ได้บันทึก', projectSaving: 'กำลังบันทึก…', projectSaveError: 'บันทึกไม่สำเร็จ',
     projectRecovered: 'กู้คืนงานล่าสุดแล้ว', projectMissing: 'ไม่พบไฟล์สื่อของโปรเจกต์', exportCancel: 'ยกเลิก Export',
     open: '📂 เปิดวิดีโอ/รูป', exportVideo: '⬇️ Export วิดีโอ', exportPng: '⬇️ Export PNG',
     play: '▶️ เล่น', pause: '⏸ หยุด', split: '✂️ แบ่งท่อน',
@@ -169,6 +177,7 @@ const I18N = {
     micPermission: 'เปิดไมโครโฟนไม่ได้ — ตรวจสิทธิ์ Microphone ให้ ZoomCut',
     promptCancel: 'ยกเลิก', promptOk: 'ตกลง', presetPlaceholder: '— เลือก preset —',
     newConfirm: 'เริ่มงานชิ้นใหม่? งานปัจจุบัน (วิดีโอ จุดซูม trim) จะถูกล้างทั้งหมด',
+    unsavedTitle: 'มีการแก้ไขที่ยังไม่ได้บันทึก', unsavedBody: 'ต้องการบันทึกการเปลี่ยนแปลงก่อนดำเนินการต่อหรือไม่?', saveAndContinue: 'บันทึกและดำเนินการต่อ', saveAndClose: 'บันทึกและปิด', discardChanges: 'ปิดต่อโดยไม่บันทึก', cancel: 'ยกเลิก', shortcutCustomize: 'กดปุ่มแล้วกดคีย์ลัดใหม่', shortcutReset: 'คืนค่าเริ่มต้น', shortcutReserved: 'คีย์ลัดนี้สงวนไว้', shortcutConflict: 'คีย์ลัดนี้ถูกใช้แล้ว', shortcutInvalid: 'คีย์ลัดไม่ถูกต้อง',
     oneSegmentRequired: 'ต้องเหลืออย่างน้อย 1 ท่อน',
     exportRemuxing: 'กำลังแปลงไฟล์ให้เล่นได้ลื่น…',
     exportSegment: (i, n, done, total, speed) => `ท่อน ${i}/${n} • ${done} / ${total} — ${speed}x`,
@@ -177,7 +186,7 @@ const I18N = {
   en: {
     hint: 'Record or import a screen video → click points to auto zoom → export',
     newJob: '🆕 New', diagnostics: '🩺 Diagnostics', record: '🔴 Record',
-    projectOpen: '📂 Open project', projectSave: '💾 Save project', projectSaved: 'Saved', projectAutosaved: 'Autosaved',
+    projectOpen: '📂 Open project', projectSave: '💾 Save project', projectSaved: 'Saved', projectAutosaved: 'Autosaved • file still unsaved', projectModified: 'Unsaved changes', projectSaving: 'Saving…', projectSaveError: 'Save failed',
     projectRecovered: 'Recovered latest work', projectMissing: 'Project media is missing', exportCancel: 'Cancel export',
     open: '📂 Open video/image', exportVideo: '⬇️ Export video', exportPng: '⬇️ Export PNG',
     play: '▶️ Play', pause: '⏸ Pause', split: '✂️ Split',
@@ -226,6 +235,7 @@ const I18N = {
     micPermission: 'Cannot open microphone. Check ZoomCut Microphone permission.',
     promptCancel: 'Cancel', promptOk: 'OK', presetPlaceholder: '— Select preset —',
     newConfirm: 'Start a new project? The current video, zoom points, and trims will be cleared.',
+    unsavedTitle: 'Unsaved changes', unsavedBody: 'Save your changes before continuing?', saveAndContinue: 'Save and continue', saveAndClose: 'Save and close', discardChanges: 'Close without saving', cancel: 'Cancel', shortcutCustomize: 'Focus a binding, then press a new shortcut', shortcutReset: 'Reset defaults', shortcutReserved: 'This shortcut is reserved', shortcutConflict: 'This shortcut is already in use', shortcutInvalid: 'Invalid shortcut',
     oneSegmentRequired: 'At least one segment must remain.',
     exportRemuxing: 'Converting the file for smooth playback…',
     exportSegment: (i, n, done, total, speed) => `Segment ${i}/${n} • ${done} / ${total} — ${speed}x`,
@@ -294,11 +304,13 @@ function undoEdit() {
   if (!history.undo.length) return;
   history.redo.push(stateSnapshot());
   restoreSnapshot(history.undo.pop());
+  markProjectDirty();
 }
 function redoEdit() {
   if (!history.redo.length) return;
   history.undo.push(stateSnapshot());
   restoreSnapshot(history.redo.pop());
+  markProjectDirty();
 }
 function applyTheme() {
   document.body.dataset.theme = state.theme;
@@ -668,6 +680,7 @@ function bindChips(rowId, attr, cb) {
     $(rowId).querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === c));
     cb(c.dataset[attr]);
     requestRender();
+    markProjectDirty();
   });
 }
 function setChipRow(rowId, attr, val) {
@@ -716,8 +729,8 @@ function syncCursorUI() {
     $(id).value = value; $(id + 'Val').textContent = text;
   }
 }
-bindChips('cursorStyleRow', 'cursorStyle', v => { state.cursorSettings.style = v; markProjectDirty(); });
-bindChips('cursorEffectRow', 'cursorEffect', v => { state.cursorSettings.clickEffect = v; markProjectDirty(); });
+bindChips('cursorStyleRow', 'cursorStyle', v => { state.cursorSettings.style = v; });
+bindChips('cursorEffectRow', 'cursorEffect', v => { state.cursorSettings.clickEffect = v; });
 $('cursorSize').addEventListener('input', e => { state.cursorSettings.size = parseFloat(e.target.value); $('cursorSizeVal').textContent = state.cursorSettings.size.toFixed(1) + 'x'; requestRender(); markProjectDirty(); });
 $('cursorSmoothing').addEventListener('input', e => { state.cursorSettings.smoothing = parseFloat(e.target.value); $('cursorSmoothingVal').textContent = Math.round(state.cursorSettings.smoothing * 100) + '%'; requestRender(); markProjectDirty(); });
 $('cursorBounce').addEventListener('input', e => { state.cursorSettings.clickBounce = parseFloat(e.target.value); $('cursorBounceVal').textContent = state.cursorSettings.clickBounce.toFixed(1); requestRender(); markProjectDirty(); });
@@ -734,11 +747,12 @@ PHONE_COLORS.forEach(([hex, name], i) => {
     state.frameColor = hex;
     phoneColorsRow.querySelectorAll('.phone-swatch').forEach(x => x.classList.toggle('active', x === d));
     requestRender();
+    markProjectDirty();
   };
   phoneColorsRow.appendChild(d);
 });
 
-$('urlText').addEventListener('input', e => { state.urlText = e.target.value; requestRender(); });
+$('urlText').addEventListener('input', e => { state.urlText = e.target.value; requestRender(); markProjectDirty(); });
 
 // ---------- Presets (localStorage) ----------
 const PRESET_KEY = 'zoomcut-presets';
@@ -809,7 +823,7 @@ $('presetDel').onclick = () => {
 };
 $('presetSel').onchange = e => {
   const s = loadPresets()[e.target.value];
-  if (s) applySettings(s);
+  if (s) { applySettings(s); markProjectDirty(); }
 };
 
 function applySettings(s) {
@@ -872,6 +886,7 @@ $('aspectRow').addEventListener('click', e => {
   document.querySelectorAll('#aspectRow .chip').forEach(c => c.classList.toggle('active', c === chip));
   setCanvasForAspect();
   requestRender();
+  markProjectDirty();
 });
 
 function bindSlider(id, key, valId, fmt) {
@@ -879,6 +894,7 @@ function bindSlider(id, key, valId, fmt) {
     state[key] = parseFloat(e.target.value);
     $(valId).textContent = fmt(state[key]);
     requestRender();
+    markProjectDirty();
   });
 }
 bindSlider('padding', 'padding', 'paddingVal', v => v + '%');
@@ -895,6 +911,7 @@ function bindCrop(id, edge, valId) {
     $(valId).textContent = e.target.value + '%';
     if (state.aspect === 'fit') setCanvasForAspect(); // crop เปลี่ยนสัดส่วน → ปรับ canvas
     requestRender();
+    markProjectDirty();
   });
 }
 bindCrop('cropT', 't', 'cropTVal');
@@ -907,7 +924,7 @@ function syncCropUI() {
     $(valId).textContent = (state.crop[edge] * 100).toFixed(1).replace(/\.0$/,'') + '%';
   }
 }
-$('cropReset').onclick = () => { state.crop = { t: 0, r: 0, b: 0, l: 0 }; syncCropUI(); if (state.aspect === 'fit') setCanvasForAspect(); requestRender(); };
+$('cropReset').onclick = () => { state.crop = { t: 0, r: 0, b: 0, l: 0 }; syncCropUI(); if (state.aspect === 'fit') setCanvasForAspect(); requestRender(); markProjectDirty(); };
 $('cropToggle').onclick = () => {
   showCropGuide = !showCropGuide;
   $('cropToggle').classList.toggle('active', showCropGuide);
@@ -1110,6 +1127,7 @@ function loadImage(file) {
     syncCropUI();
     video.pause();
     enterLoadedUI();
+    syncRevision({ revision: 1, savedRevision: 0, autosavedRevision: 0, saveState: 'modified' });
     const portrait = img.naturalHeight > img.naturalWidth;
     document.querySelector(`#aspectRow .chip[data-aspect="${portrait ? '4:5' : '16:9'}"]`).click();
     requestRender();
@@ -1151,6 +1169,7 @@ function loadVideoSource(url, source, clicksFile, onLoaded) {
     initSegments();
     video.playbackRate = 1;
     enterLoadedUI();
+    syncRevision({ revision: 1, savedRevision: 0, autosavedRevision: 0, saveState: 'modified' });
     // auto-pick aspect matching the source orientation
     const portrait = video.videoHeight > video.videoWidth;
     const target = portrait ? '9:16' : '16:9';
@@ -1169,13 +1188,28 @@ function loadVideoSource(url, source, clicksFile, onLoaded) {
 
 let autosaveTimer = null;
 let autosaveBusy = false;
-function setProjectStatus(text) { $('projectStatus').textContent = text || ''; }
+function setProjectStatus(text) {
+  const status = $('projectStatus');
+  if (!status) return;
+  status.textContent = text || '';
+  status.dataset.state = state.saveState || 'clean';
+  status.classList.toggle('modified', state.saveState === 'modified' || state.saveState === 'error');
+}
+function syncRevision(next) {
+  Object.assign(state, next);
+  state.dirty = state.revision !== state.savedRevision;
+  const text = state.saveState === 'autosaving' ? tr('projectSaving')
+    : state.saveState === 'autosaved' ? tr('projectAutosaved')
+      : state.saveState === 'modified' ? tr('projectModified')
+        : state.saveState === 'error' ? tr('projectSaveError') : '';
+  setProjectStatus(text);
+}
 function markProjectDirty() {
-  if (!state.loaded || !desktop) return;
-  state.dirty = true;
-  setProjectStatus('•');
+  if (!state.loaded) return;
+  const revision = globalThis.ZoomCutRevision?.markModified(state) || { revision: state.revision + 1, savedRevision: state.savedRevision, autosavedRevision: state.autosavedRevision, saveState: 'modified' };
+  syncRevision(revision);
   clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(() => autosaveProject(), 1200);
+  if (desktop && state.baseMedia?.sourcePath) autosaveTimer = setTimeout(() => autosaveProject(), 1200);
 }
 
 function assetExtension(blob, fallback) {
@@ -1214,28 +1248,48 @@ async function projectDocument() {
 }
 
 async function autosaveProject() {
-  if (!desktop || !state.loaded || autosaveBusy || !state.baseMedia?.sourcePath) return;
+  if (!desktop || !state.loaded || autosaveBusy || !state.baseMedia?.sourcePath || state.revision === state.autosavedRevision) return;
   autosaveBusy = true;
+  const targetRevision = state.revision;
+  syncRevision(globalThis.ZoomCutRevision?.beginAutosave(state) || { ...state, saveState: 'autosaving' });
   try {
     await desktop.project.autosave(await projectDocument());
-    state.dirty = false;
-    setProjectStatus(tr('projectAutosaved'));
+    syncRevision(globalThis.ZoomCutRevision?.finishAutosave(state, targetRevision) || { ...state, autosavedRevision: targetRevision, saveState: 'modified' });
   } catch (error) {
-    setProjectStatus(error.message || 'Autosave failed');
+    syncRevision(globalThis.ZoomCutRevision?.failSave(state) || { ...state, saveState: 'error' });
+    setProjectStatus(error.message || tr('projectSaveError'));
   } finally {
     autosaveBusy = false;
+    // If an edit landed while this checkpoint was being written, its debounce
+    // may already have fired and returned because autosaveBusy was true.
+    if (state.revision > targetRevision && state.revision !== state.autosavedRevision) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = setTimeout(() => autosaveProject(), 1200);
+    }
   }
 }
 
 async function saveProject() {
-  if (!desktop || !state.loaded) return;
+  if (!desktop || !state.loaded) return true;
+  const targetRevision = state.revision;
+  syncRevision(globalThis.ZoomCutRevision?.beginAutosave(state) || { ...state, saveState: 'autosaving' });
   try {
     const result = await desktop.project.save(await projectDocument());
-    if (result.canceled) return;
+    if (result.canceled) {
+      syncRevision({ ...state, saveState: state.revision === state.savedRevision ? 'clean'
+        : state.revision === state.autosavedRevision ? 'autosaved' : 'modified' });
+      return false;
+    }
     state.projectPath = result.path;
-    state.dirty = false;
+    syncRevision(globalThis.ZoomCutRevision?.finishExplicitSave(state, targetRevision) || { ...state, savedRevision: targetRevision, autosavedRevision: targetRevision, saveState: 'clean' });
+    if (state.revision === targetRevision) await desktop.project.clearRecovery().catch(() => {});
     setProjectStatus(tr('projectSaved'));
-  } catch (error) { showActionableError(error.message); }
+    return state.revision === state.savedRevision;
+  } catch (error) {
+    syncRevision(globalThis.ZoomCutRevision?.failSave(state) || { ...state, saveState: 'error' });
+    showActionableError(error.message);
+    return false;
+  }
 }
 
 function replaceMissingPath(document, missing, replacement) {
@@ -1315,7 +1369,11 @@ async function restoreProject(document, projectPath, recovered = false) {
       state.cameraLaneCount = saved.cameraLaneCount || 1;
       state.projectPath = projectPath || null;
       state.projectCreatedAt = document.createdAt || null;
-      state.dirty = false;
+      // A recovered autosave is deliberately still modified: recovery is a
+      // crash-safety checkpoint, not an explicit .zoomcut save.
+      syncRevision(recovered
+        ? { revision: 1, savedRevision: 0, autosavedRevision: 1, saveState: 'modified' }
+        : { revision: 0, savedRevision: 0, autosavedRevision: 0, saveState: 'clean' });
       nextId = Math.max(1, ...state.events.map(x => Number(x.id) + 1));
       videoClipId = Math.max(1, ...state.videoClips.map(x => Number(x.id) + 1));
       voiceId = Math.max(1, ...state.voiceovers.map(x => Number(x.id) + 1));
@@ -1323,19 +1381,79 @@ async function restoreProject(document, projectPath, recovered = false) {
       applySettings(document.settings || {});
       setChipRow('zoomStyleRow', 'zoomStyle', state.zoomStyle);
       updateTimelineUI(); updateSegUI(); updateVoiceUI(); updateCameraUI(); requestRender();
-      setProjectStatus(recovered ? tr('projectRecovered') : tr('projectSaved'));
+      setProjectStatus(recovered ? `${tr('projectRecovered')} • ${tr('projectModified')}` : tr('projectSaved'));
     } catch (error) { showActionableError(error.message); }
   });
 }
 
 async function openProject() {
   if (!desktop) return;
+  if (!await requestProjectTransition('open')) return;
   try {
     const result = await desktop.project.open();
     if (result.canceled) return;
     if (result.missing?.length && !await relinkMissingMedia(result.document, result.missing)) return;
     await restoreProject(result.document, result.path, false);
   } catch (error) { showActionableError(error.message); }
+}
+
+let projectTransitionPromise = null;
+async function settleActiveVoiceCapture() {
+  if (!voiceRec.active && !voiceRec.voiceSession && !voiceRec.camSession) return true;
+  stopVoiceover();
+  const deadline = Date.now() + 20000;
+  while (voiceRec.active || voiceRec.voiceSession || voiceRec.camSession) {
+    if (Date.now() >= deadline) {
+      showActionableError(state.lang === 'th' ? 'ยังบันทึกเสียงหรือกล้องไม่เสร็จ กรุณารอสักครู่แล้วลองอีกครั้ง' : 'Voice or camera recording is still finalizing. Wait a moment and try again.');
+      return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return true;
+}
+async function requestProjectTransition(kind) {
+  if (projectTransitionPromise) return false;
+  projectTransitionPromise = (async () => {
+    if (!await settleActiveVoiceCapture()) return false;
+    if (!state.loaded || state.revision === state.savedRevision) return kind === 'close' ? 'discard' : true;
+    return new Promise(resolve => {
+    const title = $('unsavedTitle');
+    const body = $('unsavedBody');
+    const save = $('unsavedSave');
+    const discard = $('unsavedDiscard');
+    const cancel = $('unsavedCancel');
+    title.textContent = tr('unsavedTitle');
+    body.textContent = tr('unsavedBody');
+    save.textContent = kind === 'close' ? tr('saveAndClose') : tr('saveAndContinue');
+    discard.textContent = kind === 'close' ? tr('discardChanges') : (state.lang === 'th' ? 'ดำเนินการต่อโดยไม่บันทึก' : 'Continue without saving');
+    cancel.textContent = tr('cancel');
+    $('unsavedOverlay').classList.add('visible');
+    let settled = false;
+    const setBusy = busy => { save.disabled = busy; discard.disabled = busy; cancel.disabled = busy; };
+    const done = value => {
+      if (settled) return;
+      settled = true; setBusy(false); $('unsavedOverlay').classList.remove('visible'); resolve(value);
+    };
+    cancel.onclick = () => done(false);
+    discard.onclick = async () => {
+      if (settled || discard.disabled) return;
+      setBusy(true);
+      await desktop?.project.clearRecovery().catch(() => {});
+      done(kind === 'close' ? 'discard' : true);
+    };
+    save.onclick = async () => {
+      if (settled || save.disabled) return;
+      setBusy(true);
+      const ok = await saveProject();
+      if (ok) done(kind === 'close' ? 'save' : true);
+      else setBusy(false);
+    };
+    $('unsavedOverlay').onkeydown = event => { if (event.key === 'Escape' && !save.disabled) done(false); };
+    cancel.focus();
+    });
+  });
+  try { return await projectTransitionPromise; }
+  finally { projectTransitionPromise = null; }
 }
 
 $('projectSaveBtn').onclick = saveProject;
@@ -1350,10 +1468,19 @@ if (desktop) {
     if (recovery.missing?.length && !await relinkMissingMedia(recovery.document, recovery.missing)) return;
     restoreProject(recovery.document, null, true);
   }, 500);
+  desktop.system.onCloseRequest(async ({ requestId } = {}) => {
+    try {
+      const decision = await requestProjectTransition('close');
+      await desktop.system.respondClose({ requestId, decision: decision || 'cancel' });
+    } catch (error) {
+      setProjectStatus(error.message || tr('projectSaveError'));
+      await desktop.system.respondClose({ requestId, decision: 'cancel' }).catch(() => {});
+    }
+  });
 }
-document.addEventListener('change', e => { if (!e.target.closest('#langSel, #themeBtn')) markProjectDirty(); });
-document.addEventListener('pointerup', () => { if (state.loaded) markProjectDirty(); });
-window.addEventListener('beforeunload', () => { if (state.dirty) autosaveProject(); });
+// Selection, playback, panel, theme, and language are app UI state. They must
+// never create a project revision; mutations call markProjectDirty explicitly.
+window.addEventListener('beforeunload', () => { if (state.revision !== state.autosavedRevision) autosaveProject(); });
 
 // ---------- Camera math ----------
 // ID_CAM = กล้องพัก: ซูม 1 เท่า อยู่กึ่งกลางพื้นที่ crop (คำนวณสดเพราะขึ้นกับ crop)
@@ -2179,87 +2306,73 @@ video.addEventListener('seeked', () => { requestRender(); updatePlayheadUI(); up
 video.addEventListener('ended', () => video.pause());
 
 function isTypingTarget(el) {
-  return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  return globalThis.ZoomCutShortcuts?.isTypingTarget(el) || false;
 }
-function openShortcutHelp() {
-  const rows = [
-    ['Space', state.lang === 'th' ? 'เล่น/หยุด' : 'Play/Pause'],
-    ['B / C / ⌘B', state.lang === 'th' ? 'แบ่งท่อนที่ playhead' : 'Split at playhead'],
-    ['I / O', state.lang === 'th' ? 'ตั้งหัว/หางท่อนที่เลือก' : 'Set in/out point'],
-    ['Q / W', state.lang === 'th' ? 'ตัดซ้าย/ขวาถึง playhead' : 'Trim left/right to playhead'],
-    ['Delete', state.lang === 'th' ? 'ลบ item ที่เลือก' : 'Delete selected item'],
-    ['⌘/Ctrl+Z', state.lang === 'th' ? 'Undo' : 'Undo'],
-    ['⌘/Ctrl+D', state.lang === 'th' ? 'ทำสำเนาคลิปที่เลือก' : 'Duplicate selected clip'],
-    ['⇧⌘/Ctrl+Z', state.lang === 'th' ? 'Redo' : 'Redo'],
-    ['← / →', state.lang === 'th' ? 'เลื่อน playhead 0.1 วิ' : 'Seek 0.1s'],
-    ['⇧← / ⇧→', state.lang === 'th' ? 'เลื่อน playhead 1 วิ' : 'Seek 1s'],
-    ['Home / End', state.lang === 'th' ? 'ไปต้น/ท้ายวิดีโอ' : 'Go to start/end'],
-    ['J / K / L', state.lang === 'th' ? 'ถอย / หยุด / เล่น' : 'Back / Stop / Play'],
-    ['↑ / ↓', state.lang === 'th' ? 'เลือกท่อนก่อนหน้า/ถัดไป' : 'Select previous/next segment'],
-    ['[ / ]', state.lang === 'th' ? 'เลือกท่อนก่อนหน้า/ถัดไป' : 'Select previous/next segment'],
-    ['A / V', state.lang === 'th' ? 'เลือกท่อนปัจจุบัน / ล้าง selection' : 'Select current / clear selection'],
-    ['⌘/Ctrl + + / -', state.lang === 'th' ? 'ซูม timeline เข้า/ออก' : 'Zoom timeline in/out'],
-    ['⇧Z', state.lang === 'th' ? 'Fit timeline' : 'Fit timeline'],
-    ['R', state.lang === 'th' ? 'เริ่ม/หยุด voice over' : 'Start/stop voice over'],
-    ['?', state.lang === 'th' ? 'เปิดหน้าคีย์ลัด' : 'Show shortcuts'],
-  ];
+let shortcutEditingId = null;
+function shortcutLabel(item) { return typeof item.label === 'object' ? (item.label[state.lang] || item.label.en) : item.label; }
+function renderShortcutHelp() {
+  if (!shortcutRegistry) return;
   $('shortcutTitle').textContent = tr('shortcuts');
   $('shortcutClose').textContent = tr('close');
-  $('shortcutGrid').innerHTML = rows.map(([key, label]) =>
-    `<div class="shortcut-item"><span>${label}</span><kbd>${key}</kbd></div>`).join('');
+  $('shortcutCustomizeHint').textContent = tr('shortcutCustomize');
+  $('shortcutReset').textContent = tr('shortcutReset');
+  $('shortcutGrid').innerHTML = shortcutRegistry.list().map(item => {
+    const editing = shortcutEditingId === item.actionId;
+    const editable = item.actionId !== 'shortcutHelp';
+    return `<div class="shortcut-item${editing ? ' editing' : ''}" data-shortcut-id="${escapeHtml(item.actionId)}"><span>${escapeHtml(shortcutLabel(item))}</span><span class="shortcut-binding"><kbd tabindex="${editable ? '0' : '-1'}" role="button" aria-label="${escapeHtml(shortcutLabel(item))}" aria-disabled="${editable ? 'false' : 'true'}">${escapeHtml(item.binding)}</kbd></span></div>`;
+  }).join('');
+}
+function openShortcutHelp() {
+  renderShortcutHelp();
   $('shortcutOverlay').classList.add('visible');
 }
 $('shortcutBtn').onclick = openShortcutHelp;
 $('shortcutClose').onclick = () => $('shortcutOverlay').classList.remove('visible');
 $('shortcutOverlay').addEventListener('click', e => { if (e.target === $('shortcutOverlay')) $('shortcutOverlay').classList.remove('visible'); });
+$('shortcutReset').onclick = () => { shortcutRegistry?.reset(); shortcutEditingId = null; $('shortcutError').textContent = ''; renderShortcutHelp(); };
+$('shortcutGrid').addEventListener('click', event => {
+  const key = event.target.closest('kbd');
+  if (!key || key.getAttribute('aria-disabled') === 'true') return;
+  shortcutEditingId = event.target.closest('[data-shortcut-id]')?.dataset.shortcutId || null;
+  $('shortcutError').textContent = '';
+  renderShortcutHelp();
+});
+$('shortcutGrid').addEventListener('keydown', event => {
+  const key = event.target.closest('kbd');
+  if (!key || !['Enter', ' '].includes(event.key) || key.getAttribute('aria-disabled') === 'true') return;
+  event.preventDefault(); event.stopPropagation(); key.click();
+});
 
-document.addEventListener('keydown', e => {
-  if (isTypingTarget(e.target) || state.exporting) return;
-  const mod = e.metaKey || e.ctrlKey;
-  const key = e.key.toLowerCase();
-
-  if (e.key === '?' || (e.shiftKey && e.key === '/')) { e.preventDefault(); openShortcutHelp(); return; }
-  if (e.key === 'Escape') {
-    $('shortcutOverlay').classList.remove('visible');
-    $('diagOverlay').classList.remove('visible');
-    clearSelection();
-    return;
-  }
+function runShortcutAction(actionId, event) {
   if (!state.loaded || state.mode !== 'video') return;
-
-  if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redoEdit() : undoEdit(); return; }
-  if (mod && key === 'd') { e.preventDefault(); duplicateSelection(); return; }
-  if ((mod && key === 'b') || key === 'b' || key === 'c') { e.preventDefault(); splitVideoClipAtPlayhead() || splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(); return; }
-  if (e.code === 'Space') { e.preventDefault(); playBtn.onclick(); return; }
-  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); actionDeleteSelected(); return; }
-  if (key === 'i' || key === 'q') { e.preventDefault(); actionTrimStartToPlayhead(); return; }
-  if (key === 'o' || key === 'w') { e.preventDefault(); actionTrimEndToPlayhead(); return; }
-  if (key === 'r') { e.preventDefault(); $('voiceBtn').click(); return; }
-  if (key === 'j') { e.preventDefault(); video.pause(); seekBy(e.shiftKey ? -1 : -0.5); return; }
-  if (key === 'k') { e.preventDefault(); video.pause(); return; }
-  if (key === 'l') { e.preventDefault(); if (video.paused) playBtn.onclick(); else video.playbackRate = Math.min(4, (video.playbackRate || 1) + 0.5); return; }
-  if (e.key === 'ArrowLeft') { e.preventDefault(); seekBy(e.shiftKey ? -1 : -0.1); return; }
-  if (e.key === 'ArrowRight') { e.preventDefault(); seekBy(e.shiftKey ? 1 : 0.1); return; }
-  if (e.key === 'ArrowUp') { e.preventDefault(); selectSegmentNearPlayhead(-1); return; }
-  if (e.key === 'ArrowDown') { e.preventDefault(); selectSegmentNearPlayhead(1); return; }
-  if (e.key === '[') { e.preventDefault(); selectSegmentNearPlayhead(-1); return; }
-  if (e.key === ']') { e.preventDefault(); selectSegmentNearPlayhead(1); return; }
-  if (!mod && key === 'a') {
-    e.preventDefault();
-    const s = segAt(video.currentTime);
-    if (s) { selectOnly('seg', s.id); updateSegUI(); }
-    return;
+  const action = {
+    playPause: () => playBtn.onclick(), split: () => splitVideoClipAtPlayhead() || splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(), splitAlt: () => splitVideoClipAtPlayhead() || splitVoiceAtPlayhead() || splitCameraAtPlayhead() || actionSplitAtPlayhead(),
+    trimStart: () => actionTrimStartToPlayhead(), trimStartAlt: () => actionTrimStartToPlayhead(), trimEnd: () => actionTrimEndToPlayhead(), trimEndAlt: () => actionTrimEndToPlayhead(), delete: () => actionDeleteSelected(),
+    undo: () => undoEdit(), redo: () => redoEdit(), duplicate: () => duplicateSelection(),
+    seekBack: () => seekBy(-0.1), seekForward: () => seekBy(0.1), seekBackLarge: () => seekBy(-1), seekForwardLarge: () => seekBy(1),
+    start: () => { video.currentTime = 0; }, end: () => { video.currentTime = video.duration || 0; },
+    back: () => { video.pause(); seekBy(-0.5); }, stop: () => video.pause(), play: () => { if (video.paused) playBtn.onclick(); else video.playbackRate = Math.min(4, (video.playbackRate || 1) + 0.5); },
+    selectPrev: () => selectSegmentNearPlayhead(-1), selectPrevAlt: () => selectSegmentNearPlayhead(-1), selectNext: () => selectSegmentNearPlayhead(1), selectNextAlt: () => selectSegmentNearPlayhead(1),
+    selectCurrent: () => { const s = segAt(video.currentTime); if (s) { selectOnly('seg', s.id); updateSegUI(); } }, clearSelection: () => clearSelection(),
+    timelineZoomIn: () => setTimelineZoom(state.timelineZoom * 1.25), timelineZoomOut: () => setTimelineZoom(state.timelineZoom / 1.25),
+    timelineFit: () => { state.timelineZoom = 1; updateTimelineScale(0); }, voiceOver: () => $('voiceBtn').click(), shortcutHelp: () => openShortcutHelp(),
+  }[actionId];
+  if (action) { event.preventDefault(); action(); }
+}
+document.addEventListener('keydown', event => {
+  if (shortcutEditingId) {
+    if (event.key === 'Escape') { shortcutEditingId = null; renderShortcutHelp(); return; }
+    if (isTypingTarget(event.target)) return;
+    const actionId = shortcutEditingId;
+    const binding = globalThis.ZoomCutShortcuts?.bindingForEvent(event);
+    try { shortcutRegistry.set(actionId, binding); shortcutEditingId = null; $('shortcutError').textContent = ''; renderShortcutHelp(); }
+    catch (error) { $('shortcutError').textContent = error.code === 'SHORTCUT_RESERVED' ? tr('shortcutReserved') : error.code === 'SHORTCUT_CONFLICT' ? tr('shortcutConflict') : tr('shortcutInvalid'); }
+    event.preventDefault(); return;
   }
-  if (!mod && key === 'v') {
-    e.preventDefault();
-    clearSelection();
-    return;
-  }
-  if (e.key === 'Home') { e.preventDefault(); video.currentTime = 0; return; }
-  if (e.key === 'End') { e.preventDefault(); video.currentTime = video.duration || 0; return; }
-  if (mod && (e.key === '+' || e.key === '=')) { e.preventDefault(); setTimelineZoom(state.timelineZoom * 1.25); return; }
-  if (mod && e.key === '-') { e.preventDefault(); setTimelineZoom(state.timelineZoom / 1.25); return; }
-  if (e.shiftKey && key === 'z') { e.preventDefault(); state.timelineZoom = 1; updateTimelineScale(0); return; }
+  if (isTypingTarget(event.target) || state.exporting) return;
+  if (event.key === 'Escape') { $('shortcutOverlay').classList.remove('visible'); $('diagOverlay').classList.remove('visible'); clearSelection(); return; }
+  const item = shortcutRegistry?.find(event)?.[0];
+  if (item) runShortcutAction(item.actionId, event);
 });
 
 // ---------- Timeline ----------
@@ -2693,14 +2806,14 @@ $('voiceTrackGroup').addEventListener('pointerdown', e => {
   const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
   const outT = sourceToOutputTime(sourceT);
   const edge = e.target.closest('.clip-handle')?.dataset.edge || null;
-  commitHistory();
-  voiceDrag = { clip: v, edge, offset: outT - clipOutStart(v), pointerId: e.pointerId };
+  voiceDrag = { clip: v, edge, offset: outT - clipOutStart(v), pointerId: e.pointerId, historyCommitted: false };
   $('voiceTrackGroup').setPointerCapture(e.pointerId);
   video.currentTime = outputToSourceTime(clipOutStart(v));
   updateVoiceUI();
 });
 $('voiceTrackGroup').addEventListener('pointermove', e => {
   if (!voiceDrag) return;
+  if (!voiceDrag.historyCommitted) { commitHistory(); voiceDrag.historyCommitted = true; }
   const lane = laneFromPoint('voiceTrackGroup', 'voice-track', e.clientX, e.clientY);
   if (lane !== null && !voiceDrag.edge) voiceDrag.clip.lane = lane;
   const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.voice-track')
@@ -2717,7 +2830,10 @@ $('voiceTrackGroup').addEventListener('pointermove', e => {
 $('voiceTrackGroup').addEventListener('pointerup', e => {
   if (!voiceDrag) return;
   const lane = laneFromPoint('voiceTrackGroup', 'voice-track', e.clientX, e.clientY);
-  if (lane !== null && !voiceDrag.edge) voiceDrag.clip.lane = lane;
+  if (lane !== null && !voiceDrag.edge && lane !== (voiceDrag.clip.lane || 0)) {
+    if (!voiceDrag.historyCommitted) commitHistory();
+    voiceDrag.clip.lane = lane;
+  }
   voiceDrag = null;
   updateVoiceUI();
 });
@@ -2744,12 +2860,14 @@ $('voiceVolume').oninput = e => {
   clip.volume = parseFloat(e.target.value);
   $('voiceVolumeVal').textContent = `${Math.round(clip.volume * 100)}%`;
   if (clip.audio) clip.audio.volume = Math.min(1, clip.volume);
+  markProjectDirty();
 };
 $('voiceMuted').onchange = e => {
   const clip = state.voiceovers.find(x => x.id === state.selectedVoiceId);
   if (!clip) return;
   clip.muted = e.target.checked;
   if (clip.audio) clip.audio.muted = clip.muted;
+  markProjectDirty();
 };
 function stopVoicePreview() {
   for (const v of state.voiceovers) {
@@ -2834,14 +2952,14 @@ $('cameraTrackGroup').addEventListener('pointerdown', e => {
   const sourceT = (e.clientX - bounds.left) / bounds.width * video.duration;
   const outT = sourceToOutputTime(sourceT);
   const edge = e.target.closest('.clip-handle')?.dataset.edge || null;
-  commitHistory();
-  camDrag = { clip: c, edge, offset: outT - clipOutStart(c) };
+  camDrag = { clip: c, edge, offset: outT - clipOutStart(c), historyCommitted: false };
   $('cameraTrackGroup').setPointerCapture(e.pointerId);
   video.currentTime = outputToSourceTime(clipOutStart(c));
   updateCameraUI();
 });
 $('cameraTrackGroup').addEventListener('pointermove', e => {
   if (!camDrag) return;
+  if (!camDrag.historyCommitted) { commitHistory(); camDrag.historyCommitted = true; }
   const lane = laneFromPoint('cameraTrackGroup', 'camera-track', e.clientX, e.clientY);
   if (lane !== null && !camDrag.edge) camDrag.clip.lane = lane;
   const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.camera-track')
@@ -2858,7 +2976,10 @@ $('cameraTrackGroup').addEventListener('pointermove', e => {
 $('cameraTrackGroup').addEventListener('pointerup', e => {
   if (!camDrag) return;
   const lane = laneFromPoint('cameraTrackGroup', 'camera-track', e.clientX, e.clientY);
-  if (lane !== null && !camDrag.edge) camDrag.clip.lane = lane;
+  if (lane !== null && !camDrag.edge && lane !== (camDrag.clip.lane || 0)) {
+    if (!camDrag.historyCommitted) commitHistory();
+    camDrag.clip.lane = lane;
+  }
   camDrag = null;
   updateCameraUI(); requestRender();
 });
@@ -2884,7 +3005,7 @@ function bindCameraFade(id, key, valId) {
     if (c) c[key] = val;
     else state.camDefaults[key] = val;
     $(valId).textContent = val.toFixed(1) + 's';
-    requestRender();
+    requestRender(); markProjectDirty();
   });
 }
 bindCameraFade('camFadeIn', 'fadeIn', 'camFadeInVal');
@@ -2896,7 +3017,7 @@ function bindCameraControl(id, key, valId, fmt) {
     if (c) c[key] = val;
     else state.camDefaults[key] = val;
     if (valId) $(valId).textContent = fmt ? fmt(val) : String(val);
-    requestRender();
+    requestRender(); markProjectDirty();
   });
 }
 bindCameraControl('camPos', 'pos');
@@ -3076,10 +3197,10 @@ function duplicateSelection() {
     const copy = ZoomCutCore.normalizeAnnotation({ ...source, id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, outStart: Math.min(Math.max(0, duration - source.outDuration), source.outStart + offset) }, duration);
     state.annotations.push(copy); selectOnly('annotation', copy.id); updateAnnotationUI(); requestRender(); return;
   }
-  commitHistory();
   if (state.selectedVideoId) {
     const source = state.videoClips.find(x => x.id === state.selectedVideoId);
     if (!source) return;
+    commitHistory();
     const element = document.createElement('video');
     element.src = source.url; element.muted = true; element.playsInline = true;
     const copy = { ...source, id: videoClipId++, outStart: Math.min(outputDuration() - clipOutDuration(source), clipOutStart(source) + offset), video: element, audioSourceNode: undefined };
@@ -3088,12 +3209,14 @@ function duplicateSelection() {
   if (state.selectedVoiceId) {
     const source = state.voiceovers.find(x => x.id === state.selectedVoiceId);
     if (!source) return;
+    commitHistory();
     const copy = { ...source, id: voiceId++, outStart: Math.min(outputDuration() - clipOutDuration(source), clipOutStart(source) + offset), audio: new Audio(source.url) };
     state.voiceovers.push(copy); selectOnly('voice', copy.id); updateVoiceUI(); return;
   }
   if (state.selectedFaceId) {
     const source = state.facecams.find(x => x.id === state.selectedFaceId);
     if (!source) return;
+    commitHistory();
     const element = document.createElement('video');
     element.src = source.url; element.muted = true; element.playsInline = true;
     const copy = { ...source, id: faceId++, outStart: Math.min(outputDuration() - clipOutDuration(source), clipOutStart(source) + offset), video: element };
@@ -3102,6 +3225,7 @@ function duplicateSelection() {
   if (state.selectedId) {
     const source = state.events.find(x => x.id === state.selectedId);
     if (!source) return;
+    commitHistory();
     const copy = { ...source, id: nextId++, start: Math.min(video.duration - eventDuration(source), source.start + offset) };
     state.events.push(copy); state.events.sort((a, b) => a.start - b.start); selectOnly('marker', copy.id); updateTimelineUI(); requestRender();
   }
@@ -3315,12 +3439,12 @@ $('annotationTrackGroup')?.addEventListener('pointerdown', e => {
   const nearRight = clipBounds.right - e.clientX <= edgeHitSize;
   const edge = targetEdge || (nearLeft ? 'left' : nearRight ? 'right' : null);
   const time = annotationTimelineTimeFromX(e.clientX, bounds);
-  annotationDrag = { a, edge, offset: time - annotationStart(a), duration: annotationDuration(a), end: annotationStart(a) + annotationDuration(a) };
-  commitHistory();
+  annotationDrag = { a, edge, offset: time - annotationStart(a), duration: annotationDuration(a), end: annotationStart(a) + annotationDuration(a), historyCommitted: false };
   $('annotationTrackGroup').setPointerCapture(e.pointerId); updateAnnotationUI();
 });
 $('annotationTrackGroup')?.addEventListener('pointermove', e => {
   if (!annotationDrag) return;
+  if (!annotationDrag.historyCommitted) { commitHistory(); annotationDrag.historyCommitted = true; }
   const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.annotation-track') || $('annotationTrackGroup').querySelector('.annotation-track');
   const time = annotationTimelineTimeFromX(e.clientX, track.getBoundingClientRect());
   if (annotationDrag.edge === 'left') {
@@ -3371,10 +3495,9 @@ canvas.addEventListener('pointerdown', e => {
     if (!hit) return;
     selectOnly('annotation', hit.a.id);
     if (laneConfig('annotation', hit.a.lane || 0).locked) { updateAnnotationUI(); return; }
-    commitHistory();
     const p = ZoomCutCore.canvasPointToSourceNorm(m, sr, c, pointer);
     const resizeHit = 18 * pointer.scale;
-    annotationDrag = { canvas: true, a: hit.a, startPoint: p, origin: { x: hit.a.x, y: hit.a.y, x2: hit.a.x2, y2: hit.a.y2, width: hit.a.width, height: hit.a.height }, resize: e.shiftKey && (pointer.x > hit.rect.x + hit.rect.w - resizeHit && pointer.y > hit.rect.y + hit.rect.h - resizeHit) };
+    annotationDrag = { canvas: true, a: hit.a, startPoint: p, origin: { x: hit.a.x, y: hit.a.y, x2: hit.a.x2, y2: hit.a.y2, width: hit.a.width, height: hit.a.height }, resize: e.shiftKey && (pointer.x > hit.rect.x + hit.rect.w - resizeHit && pointer.y > hit.rect.y + hit.rect.h - resizeHit), historyCommitted: false };
     canvas.setPointerCapture(e.pointerId); updateAnnotationUI(); e.preventDefault(); return;
   }
   // Recovery files can under-report the lane count while still carrying
@@ -3397,6 +3520,7 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   if (!annotationDrag?.canvas) return;
+  if (!annotationDrag.creating && !annotationDrag.historyCommitted) { commitHistory(); annotationDrag.historyCommitted = true; }
   const L = layout(), c = L.content, m = rawMedia(), cam = cameraAt(video.currentTime), sr = sourceRect(cam), p = ZoomCutCore.canvasPointToSourceNorm(m, sr, c, annotationCanvasPointer(e));
   const a = annotationDrag.a;
   if (annotationDrag.creating) {
@@ -3424,9 +3548,9 @@ canvas.addEventListener('pointermove', e => {
 canvas.addEventListener('pointerup', () => { if (annotationDrag?.canvas) { annotationDrag = null; updateAnnotationUI(); } });
 canvas.addEventListener('pointercancel', () => { if (annotationDrag?.canvas) { annotationDrag = null; updateAnnotationUI(); } });
 
-$('addVideoLane').onclick = () => { state.videoLaneCount++; updateSegUI(); };
-$('addVoiceLane').onclick = () => { state.voiceLaneCount++; updateVoiceUI(); };
-$('addCameraLane').onclick = () => { state.cameraLaneCount++; updateCameraUI(); };
+$('addVideoLane').onclick = () => { state.videoLaneCount++; updateSegUI(); markProjectDirty(); };
+$('addVoiceLane').onclick = () => { state.voiceLaneCount++; updateVoiceUI(); markProjectDirty(); };
+$('addCameraLane').onclick = () => { state.cameraLaneCount++; updateCameraUI(); markProjectDirty(); };
 bindLaneTools('videoTrackGroup', 'video', updateSegUI);
 bindLaneTools('voiceTrackGroup', 'voice', updateVoiceUI);
 bindLaneTools('cameraTrackGroup', 'camera', updateCameraUI);
@@ -3568,15 +3692,15 @@ $('videoTrackGroup').addEventListener('pointerdown', e => {
   const t = (e.clientX - bounds.left) / bounds.width * video.duration;
   const outT = sourceToOutputTime(t);
   segDrag = kind === 'clip'
-    ? { kind, s, edge, offset: outT - clipOutStart(s) }
-    : { kind, s, edge, offsetStart: t - s.start, offsetEnd: s.end - t };
-  if (edge || kind === 'clip') commitHistory();
+    ? { kind, s, edge, offset: outT - clipOutStart(s), historyCommitted: false }
+    : { kind, s, edge, offsetStart: t - s.start, offsetEnd: s.end - t, historyCommitted: false };
   $('videoTrackGroup').setPointerCapture(e.pointerId);
   video.currentTime = kind === 'clip' ? outputToSourceTime(clipOutStart(s)) : (edge === 'right' ? s.end : s.start);
   updateSegUI();
 });
 $('videoTrackGroup').addEventListener('pointermove', e => {
   if (!segDrag || !video.duration) return;
+  if ((segDrag.kind === 'clip' || segDrag.edge) && !segDrag.historyCommitted) { commitHistory(); segDrag.historyCommitted = true; }
   const lane = laneFromPoint('videoTrackGroup', 'seg-track', e.clientX, e.clientY);
   if (segDrag.kind === 'clip' && lane !== null && !segDrag.edge) segDrag.s.lane = lane;
   const track = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.seg-track')
@@ -3604,7 +3728,10 @@ $('videoTrackGroup').addEventListener('pointermove', e => {
 $('videoTrackGroup').addEventListener('pointerup', e => {
   if (!segDrag) return;
   const lane = laneFromPoint('videoTrackGroup', 'seg-track', e.clientX, e.clientY);
-  if (segDrag.kind === 'clip' && lane !== null && !segDrag.edge) segDrag.s.lane = lane;
+  if (segDrag.kind === 'clip' && lane !== null && !segDrag.edge && lane !== (segDrag.s.lane || 0)) {
+    if (!segDrag.historyCommitted) commitHistory();
+    segDrag.s.lane = lane;
+  }
   segDrag = null;
   updateSegUI(); requestRender();
 });
@@ -3726,14 +3853,14 @@ $('mZoom').addEventListener('input', e => {
   if (!ev) return;
   ev.zoom = parseFloat(e.target.value);
   $('mZoomVal').textContent = ev.zoom.toFixed(1) + 'x';
-  updateTimelineUI(); requestRender();
+  updateTimelineUI(); requestRender(); markProjectDirty();
 });
 $('mHold').addEventListener('input', e => {
   const ev = state.events.find(x => x.id === state.selectedId);
   if (!ev) return;
   ev.hold = parseFloat(e.target.value);
   $('mHoldVal').textContent = ev.hold.toFixed(1) + 's';
-  updateTimelineUI(); requestRender();
+  updateTimelineUI(); requestRender(); markProjectDirty();
 });
 function bindMarkerTimeSlider(id, key, valId) {
   $(id).addEventListener('input', e => {
@@ -3742,7 +3869,7 @@ function bindMarkerTimeSlider(id, key, valId) {
     ev[key] = parseFloat(e.target.value);
     normalizeEventTiming(ev);
     $(valId).textContent = ev[key].toFixed(2).replace(/0$/,'').replace(/\.0$/,'') + 's';
-    updateTimelineUI(); requestRender();
+    updateTimelineUI(); requestRender(); markProjectDirty();
   });
 }
 bindMarkerTimeSlider('mIn', 'tIn', 'mInVal');
@@ -3750,16 +3877,19 @@ bindMarkerTimeSlider('mOut', 'tOut', 'mOutVal');
 $('mGrowL').onclick = () => {
   const ev = state.events.find(x => x.id === state.selectedId);
   if (!ev) return;
+  commitHistory();
   shiftEventStart(ev, ev.start - 0.25);
   updateTimelineUI(); requestRender();
 };
 $('mGrowR').onclick = () => {
   const ev = state.events.find(x => x.id === state.selectedId);
   if (!ev) return;
+  commitHistory();
   setEventEnd(ev, eventEnd(ev) + 0.25);
   updateTimelineUI(); requestRender();
 };
 $('mDelete').onclick = () => {
+  if (!state.events.some(e => e.id === state.selectedId)) return;
   commitHistory();
   state.events = state.events.filter(e => e.id !== state.selectedId);
   state.selectedId = null;
@@ -3779,8 +3909,7 @@ timeline.addEventListener('pointerdown', e => {
     const ev = state.events.find(x => x.id === id);
     const t = (e.clientX - bounds.left) / bounds.width * video.duration;
     const edge = e.target.closest('.z-handle')?.dataset.edge || null;
-    dragging = { ev, edge, offsetT: t - ev.start, moved: false };
-    commitHistory();
+    dragging = { ev, edge, offsetT: t - ev.start, moved: false, historyCommitted: false };
     timeline.setPointerCapture(e.pointerId);
     updateTimelineUI();
   } else {
@@ -3791,6 +3920,7 @@ timeline.addEventListener('pointerdown', e => {
 });
 timeline.addEventListener('pointermove', e => {
   if (!dragging) return;
+  if (!dragging.historyCommitted) { commitHistory(); dragging.historyCommitted = true; }
   const bounds = timeline.getBoundingClientRect();
   const raw = (e.clientX - bounds.left) / bounds.width * video.duration;
   dragging.moved = true;
@@ -3810,8 +3940,8 @@ timeline.addEventListener('pointermove', e => {
 timeline.addEventListener('pointerup', () => { dragging = null; });
 
 // ---------- งานใหม่ ----------
-$('newBtn').onclick = () => {
-  if (state.loaded && !confirm(tr('newConfirm'))) return;
+async function startNewProject() {
+  if (!await requestProjectTransition('new')) return;
   video.pause();
   video.removeAttribute('src');
   video.load();
@@ -3831,6 +3961,7 @@ $('newBtn').onclick = () => {
     crop: { t: 0, r: 0, b: 0, l: 0 },
     timelineZoom: 1,
     baseMedia: null, projectPath: null, projectCreatedAt: null, dirty: false,
+    revision: 0, savedRevision: 0, autosavedRevision: 0, saveState: 'clean',
   });
   setAnnotationTool(null);
   clearTimeout(autosaveTimer);
@@ -3868,7 +3999,8 @@ $('newBtn').onclick = () => {
   $('voiceEdit').classList.remove('visible');
   $('cameraEdit').classList.remove('visible');
   queueMicrotask(() => globalThis.refreshEditorShellIcons?.());
-};
+}
+$('newBtn').onclick = startNewProject;
 
 // ---------- Export PNG (ภาพนิ่ง / เฟรมปัจจุบัน) ----------
 async function exportPNG(scale) {

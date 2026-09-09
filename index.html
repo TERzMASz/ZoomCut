@@ -585,6 +585,20 @@
     border-radius: 8px;
     font-size: 12px;
   }
+  .shortcut-item.editing { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .shortcut-item button { font: inherit; }
+  .shortcut-binding { min-width: 92px; text-align: right; }
+  .shortcut-binding kbd { cursor: pointer; }
+  .shortcut-binding kbd[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+  .shortcut-customize { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:12px; color:var(--muted); font-size:11px; }
+  .shortcut-error { color:var(--danger); min-height:16px; margin-top:8px; font-size:11px; }
+  #unsavedOverlay { position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center; background:rgba(4,6,12,.66); backdrop-filter: blur(8px); }
+  #unsavedOverlay.visible { display:flex; }
+  .unsaved-box { width:min(420px, calc(100vw - 32px)); padding:22px; border:1px solid var(--border); background:var(--panel); border-radius:16px; box-shadow:0 24px 80px rgba(0,0,0,.36); }
+  .unsaved-box h2 { font-size:17px; margin-bottom:8px; }
+  .unsaved-box p { color:var(--muted); font-size:12px; line-height:1.55; margin-bottom:18px; }
+  .unsaved-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+  @media (max-width:720px) { .shortcut-grid { grid-template-columns:1fr; } .unsaved-actions .btn { flex:1; } }
   kbd {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     border: 1px solid var(--border);
@@ -680,7 +694,9 @@
     transition: width .2s;
   }
   .export-box .sub { font-size: 12px; color: var(--muted); }
-  .project-status { font-size: 11px; color: var(--muted); max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .project-status { font-size: 11px; color: var(--muted); max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: color .2s; }
+  .project-status.modified { color: var(--accent); }
+  .project-status[data-state="error"] { color: var(--danger); }
   #pickerOverlay {
     position: fixed;
     inset: 0;
@@ -1282,6 +1298,16 @@
       <button class="btn small" id="shortcutClose">ปิด</button>
     </div>
     <div class="shortcut-grid" id="shortcutGrid"></div>
+    <div class="shortcut-customize"><span id="shortcutCustomizeHint">เลือกคีย์ลัดแล้วกดปุ่มใหม่</span><button class="btn small" id="shortcutReset" type="button">คืนค่าเริ่มต้น</button></div>
+    <div class="shortcut-error" id="shortcutError" aria-live="polite"></div>
+  </div>
+</div>
+
+<div id="unsavedOverlay" role="dialog" aria-modal="true" aria-labelledby="unsavedTitle">
+  <div class="unsaved-box">
+    <h2 id="unsavedTitle">มีการแก้ไขที่ยังไม่ได้บันทึก</h2>
+    <p id="unsavedBody">ต้องการบันทึกการเปลี่ยนแปลงก่อนดำเนินการต่อหรือไม่?</p>
+    <div class="unsaved-actions"><button class="btn" id="unsavedCancel" type="button">ยกเลิก</button><button class="btn danger" id="unsavedDiscard" type="button">ปิดต่อโดยไม่บันทึก</button><button class="btn primary" id="unsavedSave" type="button">บันทึกและดำเนินการต่อ</button></div>
   </div>
 </div>
 
@@ -1300,6 +1326,8 @@
 
 <script src="/shared/lucide.min.js"></script>
 <script src="/shared/editor-core.js"></script>
+<script src="/shared/shortcut-registry.js"></script>
+<script src="/shared/project-revision.js"></script>
 <script src="/shared/editor-app.js"></script>
 <script src="/shared/editor-shell.js"></script>
 </body>
